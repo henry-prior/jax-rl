@@ -10,6 +10,7 @@ import TD3
 def flat_obs(o):
     return np.concatenate([o[k].flatten() for k in o])
 
+
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
 def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
@@ -35,8 +36,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default="TD3")                  # Policy name (TD3, DDPG or OurDDPG)
-    parser.add_argument("--domain_name", default="cartpole")          # OpenAI gym environment name
-    parser.add_argument("--task_name", default="swingup")
+    parser.add_argument("--domain_name", default="cartpole")          # DeepMind control suite environment name
+    parser.add_argument("--task_name", default="swingup")           # Task name within environment
     parser.add_argument("--train_steps", default=1, type=int)
     parser.add_argument("--seed", default=0, type=int)              # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--start_timesteps", default=1e4, type=int) # Time steps initial random policy is used
@@ -88,18 +89,15 @@ if __name__ == "__main__":
     }
 
     # Initialize policy
-    if args.policy == "TD3" or args.policy == "TD3_max":
+    if args.policy == "TD3":
         # Target policy smoothing is scaled wrt the action scale
         kwargs["policy_noise"] = args.policy_noise * max_action
         kwargs["noise_clip"] = args.noise_clip * max_action
         kwargs["policy_freq"] = args.policy_freq
         kwargs["expl_noise"] = args.expl_noise
         kwargs["tau"] = args.tau
-        if args.policy == "TD3":
-            #kwargs["actor_updates"] = args.actor_updates
-            policy = TD3.TD3(**kwargs)
-        else:
-            policy = TD3_max.TD3_max(**kwargs)
+        policy = TD3.TD3(**kwargs)
+            
     elif args.policy == "OurDDPG":
         policy = OurDDPG.DDPG(**kwargs)
         kwargs["tau"] = args.tau
@@ -136,7 +134,6 @@ if __name__ == "__main__":
                              size=env.action_spec().shape)
         else:
             action = (policy.select_action(state)).clip(-max_action, max_action)
-                #+ np.random.normal(0, max_action * args.expl_noise, size=action_dim)
 
         # Perform action
         timestep = env.step(action)
