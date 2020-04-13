@@ -8,6 +8,7 @@ def save_model(filename, model):
     with gfile.GFile(filename, 'wb') as fp:
         fp.write(serialization.to_bytes(model))
 
+
 def load_model(filename, model):
     with gfile.GFile(filename, 'rb') as fp:
         return serialization.from_bytes(model, fp.read())

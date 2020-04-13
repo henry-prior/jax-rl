@@ -1,7 +1,7 @@
+import os
+import argparse
 import numpy as np
 from dm_control import suite
-import argparse
-import os
 
 import utils
 import TD3
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         kwargs["expl_noise"] = args.expl_noise
         kwargs["tau"] = args.tau
         policy = TD3.TD3(**kwargs)
-            
+
     elif args.policy == "OurDDPG":
         policy = OurDDPG.DDPG(**kwargs)
         kwargs["tau"] = args.tau
@@ -128,10 +128,9 @@ if __name__ == "__main__":
 
         # Select action randomly or according to policy
         if t < args.start_timesteps:
-            action = np.random.uniform(
-                             env.action_spec().minimum,
-                             env.action_spec().maximum,
-                             size=env.action_spec().shape)
+            action = np.random.uniform(env.action_spec().minimum,
+                                       env.action_spec().maximum,
+                                       size=env.action_spec().shape)
         else:
             action = (policy.select_action(state)).clip(-max_action, max_action)
 
@@ -140,7 +139,8 @@ if __name__ == "__main__":
         done_bool = float(timestep.last())
 
         # Store data in replay buffer
-        replay_buffer.add(state, action, flat_obs(timestep.observation), timestep.reward, done_bool)
+        replay_buffer.add(state, action, flat_obs(timestep.observation),
+                          timestep.reward, done_bool)
 
         episode_reward += timestep.reward
 
@@ -149,7 +149,7 @@ if __name__ == "__main__":
             for _ in range(args.train_steps):
                 if args.policy == "MPO":
                     policy.train(replay_buffer, args.batch_size,
-                                args.num_action_samples)
+                                 args.num_action_samples)
                 else:
                     policy.train(replay_buffer, args.batch_size)
 
@@ -164,7 +164,8 @@ if __name__ == "__main__":
 
         # Evaluate episode
         if (t + 1) % args.eval_freq == 0:
-            evaluations.append(eval_policy(policy, args.domain_name, args.task_name, args.seed))
+            evaluations.append(eval_policy(policy, args.domain_name,
+                                           args.task_name, args.seed))
             np.save(f"./results/{file_name}", evaluations)
         if (t + 1) % args.save_freq == 0:
             if args.save_model: policy.save(f"./models/{file_name}_" + str(t+1))

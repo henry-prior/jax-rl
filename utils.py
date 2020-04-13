@@ -1,9 +1,8 @@
+from typing import Iterator, Union
 import jax
 import jax.numpy as jnp
 from jax import random
-from flax import serialization
 import numpy as onp
-from typing import Iterator, Union
 
 
 class ReplayBuffer(object):
@@ -52,7 +51,6 @@ class PRNGSequence(Iterator[random.PRNGKey]):
         if isinstance(key_or_seed, int):
             key = random.PRNGKey(key_or_seed)
         else:
-            assert_is_prng_key(key_or_seed)
             key = key_or_seed
         self._key = key
 
