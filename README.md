@@ -6,6 +6,7 @@ Core Deep Reinforcement Learning algorithms using JAX for improved performance r
 
 - [x] TD3
 - [ ] MPO
+- [ ] SAC
 - [ ] PPO
 - [ ] A2C/A3C
 - [ ] ACKTR
