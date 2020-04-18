@@ -4,7 +4,7 @@ import numpy as np
 from dm_control import suite
 
 import utils
-import TD3
+import TD3, SAC
 
 
 def flat_obs(o):
@@ -97,13 +97,10 @@ if __name__ == "__main__":
         kwargs["expl_noise"] = args.expl_noise
         kwargs["tau"] = args.tau
         policy = TD3.TD3(**kwargs)
-
-    elif args.policy == "OurDDPG":
-        policy = OurDDPG.DDPG(**kwargs)
-        kwargs["tau"] = args.tau
     elif args.policy == "SAC":
-        policy = SAC.SAC(**kwargs)
+        kwargs["policy_freq"] = args.policy_freq
         kwargs["tau"] = args.tau
+        policy = SAC.SAC(**kwargs)
     elif args.policy == "MPO":
         policy = MPO.MPO(**kwargs)
     if args.load_model != "":
