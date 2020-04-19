@@ -108,7 +108,7 @@ if __name__ == "__main__":
         policy_file = file_name if args.load_model == "default" else args.load_model
         policy.load(f"./models/{policy_file}")
 
-    replay_buffer = utils.ReplayBuffer(state_dim, action_dim, max_size=args.buffer_size)
+    replay_buffer = utils.ReplayBuffer(state_dim, action_dim, max_size=int(args.buffer_size))
 
     # Evaluate untrained policy
     evaluations = [eval_policy(policy, args.domain_name, args.task_name, args.seed)]

@@ -12,21 +12,21 @@ from models import (build_gaussian_policy_model,
                     build_constant_model)
 
 
-def actor_loss_fn(alpha, log_p, min_q):
-    return (alpha * log_p - min_q).mean()
+def actor_loss_fn(log_alpha, log_p, min_q):
+    return (jnp.exp(log_alpha) * log_p - min_q).mean()
 
 
-def alpha_loss_fn(alpha, target_entropy, log_p):
-    return (alpha * (-log_p - target_entropy)).mean()
+def alpha_loss_fn(log_alpha, target_entropy, log_p):
+    return (log_alpha * (-log_p - target_entropy)).mean()
 
 
 @jax.jit
 def get_td_target(rng, state, action, next_state, reward, not_done,
-                  discount, max_action, actor, critic_target, alpha):
+                  discount, max_action, actor, critic_target, log_alpha):
     next_action, next_log_p = actor(next_state, sample=True, key=rng)
 
     target_Q1, target_Q2 = critic_target(next_state, next_action)
-    target_Q = jnp.minimum(target_Q1, target_Q2) - alpha() * next_log_p
+    target_Q = jnp.minimum(target_Q1, target_Q2) - jnp.exp(log_alpha()) * next_log_p
     target_Q = reward + not_done * discount * target_Q
 
     return target_Q
@@ -43,13 +43,13 @@ def critic_step(optimizer, state, action, target_Q):
 
 
 @jax.jit
-def actor_step(rng, optimizer, critic, state, alpha):
-    critic, alpha = critic.target, alpha.target
+def actor_step(rng, optimizer, critic, state, log_alpha):
+    critic, log_alpha = critic.target, log_alpha.target
     def loss_fn(actor):
         actor_action, log_p = actor(state, sample=True, key=rng)
         q1, q2 = critic(state, actor_action)
         min_q = jnp.minimum(q1, q2)
-        partial_loss_fn = jax.vmap(partial(actor_loss_fn, jax.lax.stop_gradient(alpha())))
+        partial_loss_fn = jax.vmap(partial(actor_loss_fn, jax.lax.stop_gradient(log_alpha())))
         actor_loss = partial_loss_fn(log_p, min_q)
         return jnp.mean(actor_loss), log_p
     grad, log_p = jax.grad(loss_fn, has_aux=True)(optimizer.target)
@@ -59,8 +59,8 @@ def actor_step(rng, optimizer, critic, state, alpha):
 @jax.jit
 def alpha_step(optimizer, log_p, target_entropy):
     log_p = jax.lax.stop_gradient(log_p)
-    def loss_fn(alpha):
-        partial_loss_fn = jax.vmap(partial(alpha_loss_fn, alpha(), target_entropy))
+    def loss_fn(log_alpha):
+        partial_loss_fn = jax.vmap(partial(alpha_loss_fn, log_alpha(), target_entropy))
         return jnp.mean(partial_loss_fn(log_p))
     grad = jax.grad(loss_fn)(optimizer.target)
     return optimizer.apply_gradient(grad)
@@ -98,11 +98,10 @@ class SAC():
 
         self.entropy_tune = entropy_tune
 
-        if self.entropy_tune:
-            alpha = build_constant_model(-3.5, next(self.rng))
-            alpha_optimizer = optim.Adam(learning_rate=lr).create(alpha)
-            self.alpha_optimizer = jax.device_put(alpha_optimizer)
-            self.target_entropy = -action_dim
+        log_alpha = build_constant_model(-3.5, next(self.rng))
+        log_alpha_optimizer = optim.Adam(learning_rate=lr).create(log_alpha)
+        self.log_alpha_optimizer = jax.device_put(log_alpha_optimizer)
+        self.target_entropy = -action_dim
 
         self.max_action = max_action
         self.discount = discount
@@ -114,7 +113,7 @@ class SAC():
     @property
     def target_params(self):
         return (self.discount, self.max_action, self.actor_optimizer.target,
-                self.critic_target, self.alpha_optimizer.target)
+                self.critic_target, self.log_alpha_optimizer.target)
 
     def select_action(self, state):
         mean, _ = apply_model(self.actor_optimizer.target, state)
@@ -140,19 +139,14 @@ class SAC():
 
         if self.total_it % self.policy_freq == 0:
 
-            #start_par = self.actor_optimizer.target.params
             self.actor_optimizer, log_p = actor_step(next(self.rng),
                                                      self.actor_optimizer,
                                                      self.critic_optimizer,
                                                      state,
-                                                     self.alpha_optimizer)
-            #for key, val in start_par:
-            #    for key2, val2 in val:
-            #        print(val2 == self.actor_optimizer.target.params[key][key2])
-            #print((start_par == self.actor_optimizer.target.params))
+                                                     self.log_alpha_optimizer)
 
             if self.entropy_tune:
-                self.alpha_optimizer = alpha_step(self.alpha_optimizer,
+                self.log_alpha_optimizer = alpha_step(self.log_alpha_optimizer,
                                                   log_p, self.target_entropy)
 
             self.critic_target = copy_params(self.critic_optimizer.target,
