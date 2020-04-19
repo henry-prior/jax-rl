@@ -4,7 +4,7 @@ import numpy as np
 from dm_control import suite
 
 import utils
-import TD3, SAC
+import TD3, SAC, MPO
 
 
 def flat_obs(o):
@@ -35,12 +35,13 @@ def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy", default="TD3")                  # Policy name (TD3, DDPG or OurDDPG)
+    parser.add_argument("--policy", default="TD3")                  # Policy name (TD3, SAC, or MPO)
     parser.add_argument("--domain_name", default="cartpole")          # DeepMind control suite environment name
     parser.add_argument("--task_name", default="swingup")           # Task name within environment
     parser.add_argument("--train_steps", default=1, type=int)
-    parser.add_argument("--seed", default=0, type=int)              # Sets Gym, PyTorch and Numpy seeds
+    parser.add_argument("--seed", default=0, type=int)              # Sets DM control and JAX seeds
     parser.add_argument("--start_timesteps", default=1e4, type=int) # Time steps initial random policy is used
+    parser.add_argument("--buffer_size", default=2e6, type=int)     # Max size of replay buffer
     parser.add_argument("--eval_freq", default=5e3, type=int)       # How often (time steps) we evaluate
     parser.add_argument("--max_timesteps", default=1e6, type=int)   # Max time steps to run environment
     parser.add_argument("--expl_noise", default=0.1)                # Std of Gaussian exploration noise
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_freq", default=5e3, type=int)
     args = parser.parse_args()
 
-    file_name = f"{args.policy}_{args.domain_name}_{args.actor_updates}"
+    file_name = f"{args.policy}_{args.domain_name}_{args.seed}"
     print("---------------------------------------")
     print(f"Policy: {args.policy}, Env: {args.domain_name}, Seed: {args.seed}")
     print("---------------------------------------")
@@ -107,7 +108,7 @@ if __name__ == "__main__":
         policy_file = file_name if args.load_model == "default" else args.load_model
         policy.load(f"./models/{policy_file}")
 
-    replay_buffer = utils.ReplayBuffer(state_dim, action_dim)
+    replay_buffer = utils.ReplayBuffer(state_dim, action_dim, max_size=args.buffer_size)
 
     # Evaluate untrained policy
     evaluations = [eval_policy(policy, args.domain_name, args.task_name, args.seed)]

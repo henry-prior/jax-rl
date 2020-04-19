@@ -39,33 +39,13 @@ class ReplayBuffer(object):
         )
 
 
-class PRNGSequence(Iterator[random.PRNGKey]):
-    """Iterator of PRNGKeys.
-        >>> seq = hk.PRNGSequence(42)  # OR pass a jax.random.PRNGKey
-        >>> key1 = next(seq)
-        >>> key2 = next(seq)
-        >>> assert key1 is not key2
-    """
+@jax.jit
+def copy_params(model, model_target, tau):
+    update_params = jax.tree_multimap(
+        lambda m1, mt: tau * m1 + (1 - tau) * mt,
+        model.params, model_target.params)
 
-    def __init__(self, key_or_seed: Union[random.PRNGKey, int]):
-        if isinstance(key_or_seed, int):
-            key = random.PRNGKey(key_or_seed)
-        else:
-            key = key_or_seed
-        self._key = key
-
-    def peek(self):
-        return self._key
-
-    def replace(self, key: random.PRNGKey):
-        self._key = key
-
-    def __next__(self) -> random.PRNGKey:
-        key, subkey = random.split(self._key)
-        self._key = key
-        return subkey
-
-    next = __next__
+    return model_target.replace(params=update_params)
 
 
 @jax.vmap
@@ -76,3 +56,13 @@ def double_mse(q1, q2, qt):
 @jax.vmap
 def mse(pred, true):
     return jnp.square(true - pred).mean()
+
+
+@jax.jit
+def apply_model(model, x, *args, **kwargs):
+    return model(x.reshape(1, -1), *args, **kwargs)
+
+
+@jax.jit
+def sample_from_multivariate_normal(rng, mean, cov, shape=None):
+    return random.multivariate_normal(rng, mean, cov, shape=shape)
