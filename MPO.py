@@ -1,16 +1,14 @@
-from flax import optim
-from flax import nn
+from functools import partial
 import jax
 from jax import random
 from jax.scipy.special import logsumexp
 import jax.numpy as jnp
+from flax import optim
+from flax import nn
 from haiku import PRNGSequence
-
-from functools import partial
 
 from saving import save_model, load_model
 from utils import (apply_model,
-                   sample_from_multivariate_normal,
                    double_mse,
                    gaussian_likelihood,
                    kl_mvg_diag)
@@ -92,7 +90,7 @@ def e_step(rng, actor_target, critic_target, max_action, action_dim,
     return temp_optimizer, weights, sampled_actions
 
 
-@jax.jit
+#@jax.jit
 def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
            mu_lagrange_optimizer, sig_lagrange_optimizer, state, weights,
            sampled_actions):
@@ -103,13 +101,9 @@ def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
         target_mu, target_log_sig = actor_target(state, MPO=True)
         target_sig = jnp.exp(target_log_sig)
 
-
-        pi_cond_sig = target_mu + random.normal(rngs[0], target_mu.shape) * sig
-        pi_cond_mu = mu + random.normal(rngs[1], mu.shape) * target_sig
-        pi_target = target_mu * random.normal(rngs[2], target_mu.shape) * target_sig
-
-        actor_log_prob = gaussian_likelihood(pi_cond_sig, target_mu, sig)
-        actor_log_prob += gaussian_likelihood(pi_cond_mu, mu, target_sig)
+        actor_log_prob = gaussian_likelihood(sampled_actions, target_mu.squeeze(), sig.squeeze())
+        actor_log_prob += gaussian_likelihood(sampled_actions, mu.squeeze(), target_sig.squeeze())
+        actor_log_prob = actor_log_prob.transpose((0,1))
 
         mu, target_mu = nn.tanh(mu), nn.tanh(mu)
 
@@ -119,10 +113,10 @@ def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
         mlo = lagrange_step(mlo, reg_mu)
         slo = lagrange_step(slo, reg_sig)
 
-        actor_loss = -(jax.vmap(jnp.multiply)(weights, actor_log_prob)).sum(axis=1).mean()
+        actor_loss = -(jnp.dot(actor_log_prob, weights)).sum(axis=1).mean()
         actor_loss -= mu_lagrange_optimizer.target() * reg_mu
         actor_loss -= sig_lagrange_optimizer.target() * reg_sig
-        return actor_loss.mean(),  (mlo, slo)
+        return actor_loss.mean(), (mlo, slo)
 
     grad, optims = jax.grad(partial(loss_fn, mu_lagrange_optimizer, sig_lagrange_optimizer), has_aux=True)(actor_optimizer.target)
     mu_lagrange_optimizer, sig_lagrange_optimizer = optims
@@ -245,6 +239,7 @@ class MPO():
                                                                action_sample_size)
 
         weights, sampled_actions = list(map(jax.lax.stop_gradient, [weights, sampled_actions]))
+        sampled_actions = sampled_actions.reshape((batch_size, action_sample_size, self.action_dim)).transpose((0,1))
 
         rngs = [next(self.rng) for _ in range(3)]
 
@@ -254,3 +249,18 @@ class MPO():
         if self.total_it % self.target_freq == 0:
             self.actor_target = self.actor_target.replace(params=self.actor_optimizer.target.params)
             self.critic_target = self.critic_target.replace(params=self.critic_optimizer.target.params)
+
+    def save(self, filename):
+        save_model(filename + "_critic", self.critic_optimizer)
+        save_model(filename + "_actor", self.actor_optimizer)
+
+    def load(self, filename):
+        self.critic_optimizer = load_model(filename + "_critic",
+                                           self.critic_optimizer)
+        self.critic_optimizer = jax.device_put(self.critic_optimizer)
+        self.critic_target = self.critic_target.replace(params=self.critic_optimizer.target.params)
+
+        self.actor_optimizer = load_model(filename + "_actor",
+                                          self.actor_optimizer)
+        self.actor_optimizer = jax.device_put(self.actor_optimizer)
+        self.actor_target = self.actor_target.replace(params=self.actor_optimizer.target.params)
