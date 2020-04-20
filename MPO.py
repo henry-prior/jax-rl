@@ -90,7 +90,7 @@ def e_step(rng, actor_target, critic_target, max_action, action_dim,
     return temp_optimizer, weights, sampled_actions
 
 
-#@jax.jit
+@jax.jit
 def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
            mu_lagrange_optimizer, sig_lagrange_optimizer, state, weights,
            sampled_actions):
