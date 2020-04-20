@@ -74,6 +74,27 @@ def gaussian_likelihood(sample, mu, log_sig):
     return jnp.sum(pre_sum, axis=1)
 
 
-@jax.jit
-def kl_divergence(p, q):
-    return (p * jnp.log(p / q)).sum()
+@jax.vmap
+def kl_mvg_diag(pm, pv, qm, qv):
+    """
+    Kullback-Leibler divergence from Gaussian pm,pv to Gaussian qm,qv.
+    Also computes KL divergence from a single Gaussian pm,pv to a set
+    of Gaussians qm,qv.
+    Diagonal covariances are assumed.  Divergence is expressed in nats.
+    """
+    if (len(qm.shape) == 2):
+        axis = 1
+    else:
+        axis = 0
+    # Determinants of diagonal covariances pv, qv
+    dpv = pv.prod()
+    dqv = qv.prod(axis)
+    # Inverse of diagonal covariance qv
+    iqv = 1./qv
+    # Difference between means pm, qm
+    diff = qm - pm
+    return (0.5 *
+            (jnp.log(dqv / dpv)            # log |\Sigma_q| / |\Sigma_p|
+             + (iqv * pv).sum(axis)          # + tr(\Sigma_q^{-1} * \Sigma_p)
+             + (diff * iqv * diff).sum(axis) # + (\mu_q-\mu_p)^T\Sigma_q^{-1}(\mu_q-\mu_p)
+             - len(pm)))
