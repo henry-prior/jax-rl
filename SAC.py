@@ -116,12 +116,12 @@ class SAC():
                 self.critic_target, self.log_alpha_optimizer.target)
 
     def select_action(self, state):
-        mean, _ = apply_model(self.actor_optimizer.target, state)
-        return mean.flatten()
+        mu, _ = apply_model(self.actor_optimizer.target, state)
+        return mu.flatten()
 
     def sample_action(self, rng, state):
-        mean, sig = apply_model(self.actor_optimizer.target, state)
-        return sample_from_multivariate_normal(rng, mean, sig)
+        mu, log_sig = apply_model(self.actor_optimizer.target, state)
+        return mu + random.normal(rng, mu.shape) * jnp.exp(log_sig)
 
     def train(self, replay_buffer, batch_size=100):
         self.total_it += 1

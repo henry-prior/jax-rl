@@ -6,15 +6,20 @@ Core Deep Reinforcement Learning algorithms using JAX for improved performance r
 
 - [x] TD3
 - [ ] MPO
-- [ ] SAC
+- [x] SAC
 - [ ] PPO
 - [ ] A2C/A3C
 - [ ] ACKTR
 
 # Run
 
-To run TD3 on cartpole swingup:
+To test each algorithm on cartpole swingup:
 
 ```bash
-python main_dm_control.py --max_timesteps=100000
+python main_dm_control.py --max_timestep 100000
 ```
+
+```bash
+python main_dm_control.py --policy SAC --max_timesteps 100000
+```
+

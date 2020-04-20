@@ -66,3 +66,14 @@ def apply_model(model, x, *args, **kwargs):
 @jax.jit
 def sample_from_multivariate_normal(rng, mean, cov, shape=None):
     return random.multivariate_normal(rng, mean, cov, shape=shape)
+
+
+@jax.jit
+def gaussian_likelihood(sample, mu, log_sig):
+    pre_sum = -0.5 * (((sample - mu) / (jnp.exp(log_sig) + 1e-6)) ** 2 + 2 * log_sig + jnp.log(2 * onp.pi))
+    return jnp.sum(pre_sum, axis=1)
+
+
+@jax.jit
+def kl_divergence(p, q):
+    return (p * jnp.log(p / q)).sum()

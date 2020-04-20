@@ -2,15 +2,16 @@ from flax import optim
 import jax
 from jax import random
 import jax.numpy as jnp
+from haiku import PRNGSequence
 
 from models import build_td3_actor_model, build_td3_critic_model
-from utils import double_mse, PRNGSequence
+from utils import double_mse, apply_model, copy_params
 from saving import save_model, load_model
 
 
 @jax.jit
-def no_grad(rng, state, action, next_state, reward, not_done, discount,
-            policy_noise, noise_clip, max_action, actor_target, critic_target):
+def get_td_target(rng, state, action, next_state, reward, not_done, discount,
+                  policy_noise, noise_clip, max_action, actor_target, critic_target):
     noise = jnp.clip(random.normal(rng, action.shape) * policy_noise,
                      -noise_clip, noise_clip)
 
@@ -44,26 +45,12 @@ def actor_step(optimizer, critic, state):
     return optimizer.apply_gradient(grad)
 
 
-@jax.jit
-def copy_params(model, model_target, tau):
-    update_params = jax.tree_multimap(
-        lambda m1, mt: tau * m1 + (1 - tau) * mt,
-        model.params, model_target.params)
-
-    return model_target.replace(params=update_params)
-
-
-@jax.jit
-def apply_model(model, x):
-    return model(x.reshape(1, -1)).flatten()
-
-
-class TD3(object):
+class TD3():
     def __init__(self,
                  state_dim,
                  action_dim,
                  max_action,
-                 learning_rate=3e-4,
+                 lr=3e-4,
                  discount=0.99,
                  tau=0.005,
                  policy_noise=0.2,
@@ -81,7 +68,7 @@ class TD3(object):
         actor = build_td3_actor_model(actor_input_dim, action_dim, max_action, init_rng)
         self.actor_target = build_td3_actor_model(actor_input_dim, action_dim,
                                                   max_action, init_rng)
-        actor_optimizer = optim.Adam(learning_rate=learning_rate).create(actor)
+        actor_optimizer = optim.Adam(learning_rate=lr).create(actor)
         self.actor_optimizer = jax.device_put(actor_optimizer)
 
         init_rng = next(self.rng)
@@ -91,7 +78,7 @@ class TD3(object):
 
         critic = build_td3_critic_model(critic_input_dim, init_rng)
         self.critic_target = build_td3_critic_model(critic_input_dim, init_rng)
-        critic_optimizer = optim.Adam(learning_rate=learning_rate).create(critic)
+        critic_optimizer = optim.Adam(learning_rate=lr).create(critic)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
         self.max_action = max_action
@@ -110,7 +97,7 @@ class TD3(object):
                 self.max_action, self.actor_target, self.critic_target)
 
     def select_action(self, state):
-        return apply_model(self.actor_optimizer.target, state)
+        return apply_model(self.actor_optimizer.target, state).flatten()
 
     def sample_action(self, state):
         return self.select_action(state) + \
@@ -122,9 +109,9 @@ class TD3(object):
 
         buffer_out = replay_buffer.sample(next(self.rng), batch_size)
 
-        target_Q = jax.lax.stop_gradient(no_grad(next(self.rng),
-                                                 *buffer_out,
-                                                 *self.target_params))
+        target_Q = jax.lax.stop_gradient(get_td_target(next(self.rng),
+                                                       *buffer_out,
+                                                       *self.target_params))
 
         state, action, _, _, _ = buffer_out
 

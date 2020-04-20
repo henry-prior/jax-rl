@@ -4,11 +4,7 @@ from jax import random
 import jax.numpy as jnp
 import numpy as onp
 
-
-@jax.jit
-def gaussian_likelihood(sample, mu, log_sig):
-    pre_sum = -0.5 * (((sample - mu) / (jnp.exp(log_sig) + 1e-6)) ** 2 + 2 * log_sig + jnp.log(2 * onp.pi))
-    return jnp.sum(pre_sum, axis=1)
+from utils import gaussian_likelihood
 
 
 class TD3Actor(nn.Module):
@@ -66,7 +62,7 @@ class DoubleCritic(nn.Module):
 
 
 class GaussianPolicy(nn.Module):
-    def apply(self, x, action_dim, max_action, key=None,
+    def apply(self, x, action_dim, max_action, key=None, MPO=False,
               sample=False, log_sig_min=-20, log_sig_max=2):
         x = nn.Dense(x, features=200)
         x = nn.LayerNorm(x)
@@ -78,6 +74,9 @@ class GaussianPolicy(nn.Module):
         mu, log_sig = jnp.split(x, 2, axis=-1)
         log_sig = nn.softplus(log_sig)
         log_sig = jnp.clip(log_sig, log_sig_min, log_sig_max)
+
+        if MPO:
+            return mu, log_sig
 
         if not sample:
             return max_action * nn.tanh(mu), log_sig
@@ -94,10 +93,6 @@ class Constant(nn.Module):
     def apply(self, start_value, dtype=jnp.float32):
         value = self.param('value', (1,), nn.initializers.ones)
         return start_value * jnp.asarray(value, dtype)
-
-    def abs(self):
-        value = self.get_param('value')
-        value = jnp.abs(value)
 
 
 def build_constant_model(start_value, init_rng):
