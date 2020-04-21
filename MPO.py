@@ -90,7 +90,7 @@ def e_step(rng, actor_target, critic_target, max_action, action_dim,
     return temp_optimizer, weights, sampled_actions
 
 
-#@jax.jit
+@jax.jit
 def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
            mu_lagrange_optimizer, sig_lagrange_optimizer, state, weights,
            sampled_actions):
@@ -101,8 +101,8 @@ def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
         target_mu, target_log_sig = actor_target(state, MPO=True)
         target_sig = jnp.exp(target_log_sig)
 
-        actor_log_prob = gaussian_likelihood(sampled_actions, target_mu.squeeze(), sig.squeeze())
-        actor_log_prob += gaussian_likelihood(sampled_actions, mu.squeeze(), target_sig.squeeze())
+        actor_log_prob = gaussian_likelihood(sampled_actions, target_mu, sig)
+        actor_log_prob += gaussian_likelihood(sampled_actions, mu, target_sig)
         actor_log_prob = actor_log_prob.transpose((0,1))
 
         mu, target_mu = nn.tanh(mu), nn.tanh(mu)
@@ -113,7 +113,7 @@ def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
         mlo = lagrange_step(mlo, reg_mu)
         slo = lagrange_step(slo, reg_sig)
 
-        actor_loss = -(jnp.dot(actor_log_prob, weights)).sum(axis=1).mean()
+        actor_loss = -(actor_log_prob[:, None] *  weights).sum(axis=1).mean()
         actor_loss -= mu_lagrange_optimizer.target() * reg_mu
         actor_loss -= sig_lagrange_optimizer.target() * reg_sig
         return actor_loss.mean(), (mlo, slo)
@@ -144,9 +144,9 @@ class MPO():
                  discount=0.99,
                  lr=3e-4,
                  eps_q=0.1,
-                 eps_mu=5e-4,
-                 eps_sig=1e-5,
-                 temp_steps=3,
+                 eps_mu=0.1,
+                 eps_sig=1e-4,
+                 temp_steps=10,
                  target_freq=250,
                  seed=0):
 
@@ -239,7 +239,7 @@ class MPO():
                                                                action_sample_size)
 
         weights, sampled_actions = list(map(jax.lax.stop_gradient, [weights, sampled_actions]))
-        sampled_actions = sampled_actions.reshape((batch_size, action_sample_size, self.action_dim)).transpose((0,1))
+        sampled_actions = sampled_actions.reshape((batch_size, action_sample_size, self.action_dim)).transpose((0,1)).squeeze()
 
         rngs = [next(self.rng) for _ in range(3)]
 
