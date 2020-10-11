@@ -45,7 +45,7 @@ def actor_step(optimizer, critic, state):
     return optimizer.apply_gradient(grad)
 
 
-class TD3():
+class TD3:
     def __init__(self,
                  state_dim,
                  action_dim,
@@ -113,7 +113,7 @@ class TD3():
                                                        *buffer_out,
                                                        *self.target_params))
 
-        state, action, _, _, _ = buffer_out
+        state, action, *_ = buffer_out
 
         self.critic_optimizer = critic_step(self.critic_optimizer,
                                             state, action, target_Q)
