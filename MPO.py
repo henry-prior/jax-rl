@@ -3,6 +3,7 @@ import jax
 from jax import random
 from jax.scipy.special import logsumexp
 import jax.numpy as jnp
+import numpy as onp
 from flax import optim
 from flax import nn
 from haiku import PRNGSequence
@@ -81,7 +82,7 @@ def e_step(rng, actor_target, critic_target, max_action, action_dim,
 
     for _ in range(temp_steps):
         temp_optimizer = temp_step(temp_optimizer, Q1, eps_q, action_sample_size)
-        temp_optimizer.target.params['value'] = jnp.abs(temp_optimizer.target.params['value'])
+        temp_optimizer.target.params['value'] = jnp.maximum(0., temp_optimizer.target.params['value'])
 
     Z = jnp.sum(jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / temp_optimizer.target(), axis=1)[:, None]
     weights = jnp.exp((Q1 - jnp.max(Q1, axis=1)[0]) / temp_optimizer.target()) / Z
@@ -111,7 +112,9 @@ def m_step(rngs, actor_optimizer, actor_target, eps_mu, eps_sig,
         reg_sig = eps_sig - kl_mvg_diag(target_mu, target_sig, target_mu, sig).mean()
 
         mlo = lagrange_step(mlo, reg_mu)
+        mlo.target.params['value'] = jnp.maximum(0., mlo.target.params['value'])
         slo = lagrange_step(slo, reg_sig)
+        slo.target.params['value'] = jnp.maximum(0., slo.target.params['value'])
 
         actor_loss = -(actor_log_prob[:, None] *  weights).sum(axis=1).mean()
         actor_loss -= mu_lagrange_optimizer.target() * reg_mu
@@ -136,7 +139,7 @@ def critic_step(optimizer, state, action, target_Q):
     return optimizer.apply_gradient(grad)
 
 
-class MPO():
+class MPO:
     def __init__(self,
                  state_dim,
                  action_dim,
@@ -227,7 +230,7 @@ class MPO():
                                                        *buffer_out,
                                                        *self.td_params))
 
-        state, action, _, _, _ = buffer_out
+        state, action, *_ = buffer_out
 
         self.critic_optimizer = critic_step(self.critic_optimizer,
                                             state, action, target_Q)
