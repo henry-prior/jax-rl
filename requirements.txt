@@ -4,4 +4,4 @@ git+https://github.com/deepmind/dm-haiku
 jax==0.1.62
 jaxlib==0.1.43
 numpy==1.18.2
-tensorflow==2.1.0
+tensorflow==2.1.2
