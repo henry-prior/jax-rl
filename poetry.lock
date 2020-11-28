@@ -203,6 +203,22 @@ six = "*"
 
 [[package]]
 category = "main"
+description = "Haiku is a library for building neural networks in JAX."
+name = "dm-haiku"
+optional = false
+python-versions = "*"
+version = "0.0.3"
+
+[package.dependencies]
+absl-py = ">=0.7.1"
+numpy = ">=1.18.0"
+
+[package.extras]
+jax = ["jax (>=0.1.71)"]
+jaxlib = ["jaxlib (>=0.1.49)"]
+
+[[package]]
+category = "main"
 description = "Tree is a library for working with nested data structures."
 name = "dm-tree"
 optional = false
@@ -300,6 +316,14 @@ version = "0.0.13"
 [package.dependencies]
 flake8 = ">=3.0.0"
 restructuredtext_lint = "*"
+
+[[package]]
+category = "main"
+description = "The FlatBuffers serialization format for Python"
+name = "flatbuffers"
+optional = false
+python-versions = "*"
+version = "1.12"
 
 [[package]]
 category = "main"
@@ -488,7 +512,7 @@ description = "Differentiate, compile, and transform Numpy code."
 name = "jax"
 optional = false
 python-versions = ">=3.6"
-version = "0.1.62"
+version = "0.2.6"
 
 [package.dependencies]
 absl-py = "*"
@@ -501,10 +525,11 @@ description = "XLA library for JAX"
 name = "jaxlib"
 optional = false
 python-versions = ">=3.6"
-version = "0.1.43"
+version = "0.1.57"
 
 [package.dependencies]
 absl-py = "*"
+flatbuffers = "*"
 numpy = ">=1.12"
 scipy = "*"
 
@@ -684,7 +709,7 @@ description = "Core utilities for Python packages"
 name = "packaging"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-version = "20.5"
+version = "20.7"
 
 [package.dependencies]
 pyparsing = ">=2.0.2"
@@ -1051,7 +1076,7 @@ description = "TensorFlow Estimator."
 name = "tensorflow-estimator"
 optional = false
 python-versions = "*"
-version = "2.2.0rc0"
+version = "2.1.0"
 
 [[package]]
 category = "main"
@@ -1168,7 +1193,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "679e371e2bc4e84b6ccbf45abca10e166acaf45b08af07d2534162b87cabc5b1"
+content-hash = "8b9f54e758a37078592b3de6ec3aa7ff68985fb2d511a5de3919725c56f1d387"
 lock-version = "1.0"
 python-versions = "^3.7"
 
@@ -1246,6 +1271,10 @@ dm-env = [
     {file = "dm-env-1.3.tar.gz", hash = "sha256:df9c0947f4e30dfe7d1cdd95ace4361d309f0aad28301660c98f89af1df3e3b2"},
     {file = "dm_env-1.3-py3-none-any.whl", hash = "sha256:7fafc1258340edf9aed3ce8ebf2762ffee0325f13ae156f1343ec00faa1e267c"},
 ]
+dm-haiku = [
+    {file = "dm-haiku-0.0.3.tar.gz", hash = "sha256:243d55ef68f88982952ba0ab4ae34b78f8b56327cf1c733c94ad8edd3063d245"},
+    {file = "dm_haiku-0.0.3-py3-none-any.whl", hash = "sha256:4f94937bcd46834b139d894c048d8958b5d07345c4b94b8611dd0f4400bd84be"},
+]
 dm-tree = [
     {file = "dm-tree-0.1.5.tar.gz", hash = "sha256:a951d2239111dfcc468071bc8ff792c7b1e3192cab5a3c94d33a8b2bda3127fa"},
     {file = "dm_tree-0.1.5-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:39a2c12d86b9df7bcb64c3473957744bc1af812dd7bf27c01108f17ed688644b"},
@@ -1289,6 +1318,10 @@ flake8-polyfill = [
 ]
 flake8-rst-docstrings = [
     {file = "flake8-rst-docstrings-0.0.13.tar.gz", hash = "sha256:b1b619d81d879b874533973ac04ee5d823fdbe8c9f3701bfe802bb41813997b4"},
+]
+flatbuffers = [
+    {file = "flatbuffers-1.12-py2.py3-none-any.whl", hash = "sha256:9e9ef47fa92625c4721036e7c4124182668dc6021d9e7c73704edd395648deb9"},
+    {file = "flatbuffers-1.12.tar.gz", hash = "sha256:63bb9a722d5e373701913e226135b28a6f6ac200d5cc7b4d919fa38d73b44610"},
 ]
 flax = [
     {file = "flax-0.2.2-py3-none-any.whl", hash = "sha256:e24fd49226e432a44e3796737e9da203c7c41f8303b50fb0bc1c87641a07ffa6"},
@@ -1431,15 +1464,17 @@ importlib-metadata = [
     {file = "importlib_metadata-3.1.0.tar.gz", hash = "sha256:d9b8a46a0885337627a6430db287176970fff18ad421becec1d64cfc763c2099"},
 ]
 jax = [
-    {file = "jax-0.1.62.tar.gz", hash = "sha256:0cd8eca934aced8784ebed2c4cc7ea1999c34f6b437fcb1370f67248949c2fac"},
+    {file = "jax-0.2.6.tar.gz", hash = "sha256:2d8810fee13db1783343aa2dd6989eccd05f91fead276e33cf51c611c7e63cea"},
 ]
 jaxlib = [
-    {file = "jaxlib-0.1.43-cp36-none-macosx_10_9_x86_64.whl", hash = "sha256:1b9fd8a29755c213e950a8eae128a1fed15e1055bea872e3b00e07ab9b00c05e"},
-    {file = "jaxlib-0.1.43-cp36-none-manylinux2010_x86_64.whl", hash = "sha256:74490dd3c2e37492dbefc040a059bdedf0ba62d5d68c51d43181ac6c1aa14518"},
-    {file = "jaxlib-0.1.43-cp37-none-macosx_10_9_x86_64.whl", hash = "sha256:a82b68665c0f3ef94afb790cec9f300c08ceca8248d73474e940033a133e8d52"},
-    {file = "jaxlib-0.1.43-cp37-none-manylinux2010_x86_64.whl", hash = "sha256:2dd207d8644186d7dcb8a35a85b1af0a822f1240425554ddaa8f93f9568f3962"},
-    {file = "jaxlib-0.1.43-cp38-none-macosx_10_9_x86_64.whl", hash = "sha256:31a3c55e28eaa9182e084e6233400d6e7d24f8eb9102f27e46bf52e8c8db2e02"},
-    {file = "jaxlib-0.1.43-cp38-none-manylinux2010_x86_64.whl", hash = "sha256:2beb7c0aed39ebdea4f07c04fdad491be544b627bb5194698466fa385684c070"},
+    {file = "jaxlib-0.1.57-cp36-none-macosx_10_9_x86_64.whl", hash = "sha256:47d4bf94f38ab9a437a69c19be6a3e1d235811d6da70922a3ff6502c33361504"},
+    {file = "jaxlib-0.1.57-cp36-none-manylinux2010_x86_64.whl", hash = "sha256:669427a85df109995cf2689945c995fd36abce80d7dbc0ad1833fa9966fa935e"},
+    {file = "jaxlib-0.1.57-cp37-none-macosx_10_9_x86_64.whl", hash = "sha256:048596b2ba458b01eb0c5680936df851f2083f6135ec9cd984f2f5ea45ad619d"},
+    {file = "jaxlib-0.1.57-cp37-none-manylinux2010_x86_64.whl", hash = "sha256:2bc945849553dbc31eba737ca81546fb47ec1e7c3340872d9b7dd329006f51a7"},
+    {file = "jaxlib-0.1.57-cp38-none-macosx_10_9_x86_64.whl", hash = "sha256:0fd3a836ec91d96a2944b5fa610780c46166c9c501629446921bd406bc83fcd0"},
+    {file = "jaxlib-0.1.57-cp38-none-manylinux2010_x86_64.whl", hash = "sha256:252e2b0043dc655e889da4363af9bc22c22d4c9728b9b2b685eac763d3a4de30"},
+    {file = "jaxlib-0.1.57-cp39-none-macosx_10_9_x86_64.whl", hash = "sha256:4e449261a7a4b08525b88dda49636eae55b9c2be464f4683dd4fd25e96134dce"},
+    {file = "jaxlib-0.1.57-cp39-none-manylinux2010_x86_64.whl", hash = "sha256:2c07605172118ab3a5a62d639a62059e4c8d67cc44de655af6606c50afa1d8c9"},
 ]
 keras-applications = [
     {file = "Keras_Applications-1.0.8-py3-none-any.whl", hash = "sha256:df4323692b8c1174af821bf906f1e442e63fa7589bf0f1230a0b6bdc5a810c95"},
@@ -1633,8 +1668,8 @@ opt-einsum = [
     {file = "opt_einsum-3.3.0.tar.gz", hash = "sha256:59f6475f77bbc37dcf7cd748519c0ec60722e91e63ca114e68821c0c54a46549"},
 ]
 packaging = [
-    {file = "packaging-20.5-py2.py3-none-any.whl", hash = "sha256:1a67848015ca7e7879eee30a7ae1053bc04d031e31eccbde6082820150f08621"},
-    {file = "packaging-20.5.tar.gz", hash = "sha256:5d21ed3d936beb102850195eadaa1371bfb4b93da6ad63d231410c6dca25a665"},
+    {file = "packaging-20.7-py2.py3-none-any.whl", hash = "sha256:eb41423378682dadb7166144a4926e443093863024de508ca5c9737d6bc08376"},
+    {file = "packaging-20.7.tar.gz", hash = "sha256:05af3bb85d320377db281cf254ab050e1a7ebcbf5410685a9a407e18a1f81236"},
 ]
 pathspec = [
     {file = "pathspec-0.8.1-py2.py3-none-any.whl", hash = "sha256:aa0cb481c4041bf52ffa7b0d8fa6cd3e88a2ca4879c533c9153882ee2556790d"},
@@ -1899,7 +1934,7 @@ tensorflow = [
     {file = "tensorflow-2.1.2-cp37-cp37m-win_amd64.whl", hash = "sha256:3fab589d4f8b93345b247bdd23406b00282e23fd5fb8501bb4f6131ed7bb9405"},
 ]
 tensorflow-estimator = [
-    {file = "tensorflow_estimator-2.2.0rc0-py2.py3-none-any.whl", hash = "sha256:c24aba63b33de5db089e66585399e1abefad75038c4aacca8d8d1328ab3e8282"},
+    {file = "tensorflow_estimator-2.1.0-py2.py3-none-any.whl", hash = "sha256:e5c5f648a636f18d1be4cf7ed46132b108a2f0f3fd9f1c850eba924263dc6972"},
 ]
 termcolor = [
     {file = "termcolor-1.1.0.tar.gz", hash = "sha256:1d6d69ce66211143803fbc56652b41d73b4a400a2891d7bf7a1cdf4c02de613b"},

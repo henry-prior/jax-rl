@@ -8,11 +8,12 @@ authors = ["Henry Prior <henry.prior@cims.nyu.edu>"]
 python = "^3.7"
 dm-control = "0.0.300771433"
 dm-haiku = "git+https://github.com/deepmind/dm-haiku"
-flax = ""
-jax = "0.1.62"
-jaxlib = "0.1.43"
+flax = "^0.2.2"
+jax = "^0.2.6"
+jaxlib = "0.1.57"
 numpy = "1.18.4"
 tensorflow = "2.1.2"
+tensorflow_estimator = "==2.1.0"
 reorder-python-imports = "^2.3.6"
 
 [tool.poetry.dev-dependencies]
