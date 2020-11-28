@@ -1,0 +1,9 @@
+[flake8]
+select = B,B9,C,E,F,N,W
+ignore = E203,E501,W503,C901,B008, N806, N803
+max-line-length = 88
+max-complexity = 10
+docstring-convention = google
+exclude =
+    tests/*.py
+    tmp.py

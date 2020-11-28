@@ -1,2 +1,7 @@
 models/
 results/
+__pycache__/
+__init__.py
+*.ipynb
+notebooks/
+*.mp4
