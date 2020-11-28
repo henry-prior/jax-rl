@@ -1,6 +1,8 @@
 models/
 results/
 __pycache__/
+jax_rl.egg-info/
+test/__pycache__/
 __init__.py
 *.ipynb
 notebooks/
