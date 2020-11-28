@@ -1,4 +1,4 @@
-from flax import nn
+from flax import linen as nn
 import jax
 from jax import random
 import jax.numpy as jnp
@@ -8,17 +8,22 @@ from utils import gaussian_likelihood
 
 
 class TD3Actor(nn.Module):
-    def apply(self, x, action_dim, max_action):
+    action_dim: int
+    max_action: float
+
+    @nn.compact
+    def __call__(self, x):
         x = nn.Dense(x, features=256)
         x = nn.relu(x)
         x = nn.Dense(x, features=256)
         x = nn.relu(x)
-        x = nn.Dense(x, features=action_dim)
-        return max_action * nn.tanh(x)
+        x = nn.Dense(x, features=self.action_dim)
+        return self.max_action * nn.tanh(x)
 
 
 class TD3Critic(nn.Module):
-    def apply(self, state, action, Q1=False):
+    @nn.compact
+    def __call__(self, state, action, Q1=False):
         state_action = jnp.concatenate([state, action], axis=1)
 
         q1 = nn.Dense(state_action, features=256)
@@ -27,7 +32,8 @@ class TD3Critic(nn.Module):
         q1 = nn.relu(q1)
         q1 = nn.Dense(q1, features=1)
 
-        if Q1: return q1
+        if Q1:
+            return q1
 
         q2 = nn.Dense(state_action, features=256)
         q2 = nn.relu(q2)
@@ -39,7 +45,8 @@ class TD3Critic(nn.Module):
 
 
 class DoubleCritic(nn.Module):
-    def apply(self, state, action, Q1=False):
+    @nn.compact
+    def __call__(self, state, action, Q1=False):
         state_action = jnp.concatenate([state, action], axis=1)
 
         q1 = nn.Dense(state_action, features=500)
@@ -49,7 +56,8 @@ class DoubleCritic(nn.Module):
         q1 = nn.elu(q1)
         q1 = nn.Dense(q1, features=1)
 
-        if Q1: return q1
+        if Q1:
+            return q1
 
         q2 = nn.Dense(state_action, features=500)
         q2 = nn.LayerNorm(q2)
@@ -62,14 +70,19 @@ class DoubleCritic(nn.Module):
 
 
 class GaussianPolicy(nn.Module):
-    def apply(self, x, action_dim, max_action, key=None, MPO=False,
-              sample=False, log_sig_min=-20, log_sig_max=2):
+    action_dim: int
+    max_action: float
+    log_sig_min: float = -20.0
+    log_sig_max: float = 2.0
+
+    @nn.compact
+    def apply(self, x, key=None, MPO=False, sample=False):
         x = nn.Dense(x, features=200)
         x = nn.LayerNorm(x)
         x = nn.tanh(x)
         x = nn.Dense(x, features=200)
         x = nn.elu(x)
-        x = nn.Dense(x, features=2*action_dim)
+        x = nn.Dense(x, features=2 * self.action_dim)
 
         mu, log_sig = jnp.split(x, 2, axis=-1)
         log_sig = nn.softplus(log_sig)
@@ -79,52 +92,57 @@ class GaussianPolicy(nn.Module):
             return mu, log_sig
 
         if not sample:
-            return max_action * nn.tanh(mu), log_sig
+            return self.max_action * nn.tanh(mu), log_sig
         else:
             sig = jnp.exp(log_sig)
             pi = mu + random.normal(key, mu.shape) * sig
             log_pi = gaussian_likelihood(pi, mu, log_sig)
             pi = nn.tanh(pi)
             log_pi -= jnp.sum(jnp.log(nn.relu(1 - pi ** 2) + 1e-6), axis=1)
-            return max_action * pi, log_pi
+            return self.max_action * pi, log_pi
 
 
 class Constant(nn.Module):
+    @nn.compact
     def apply(self, start_value, dtype=jnp.float32):
-        value = self.param('value', (1,), nn.initializers.ones)
+        value = self.param("value", (1,), nn.initializers.ones)
         return start_value * jnp.asarray(value, dtype)
 
 
 def build_constant_model(start_value, init_rng):
-    constant = Constant.partial(start_value=start_value)
-    _, init_params = constant.init(init_rng)
+    init_batch = jnp.ones((1,), jnp.float32)
+    init_variables = Constant().init(init_rng, init_batch)
 
-    return nn.Model(constant, init_params)
+    return dict(params=init_variables["params"])
 
 
 def build_td3_actor_model(input_shapes, action_dim, max_action, init_rng):
-    actor = TD3Actor.partial(action_dim=action_dim, max_action=max_action)
-    _, init_params = actor.init_by_shape(init_rng, input_shapes)
+    init_batch = jnp.ones(input_shapes, jnp.float32)
+    init_variables = TD3Actor(action_dim=action_dim, max_action=max_action).init(
+        init_rng, init_batch
+    )
 
-    return nn.Model(actor, init_params)
+    return dict(params=init_variables["params"])
 
 
 def build_td3_critic_model(input_shapes, init_rng):
-    critic = TD3Critic.partial()
-    _, init_params = critic.init_by_shape(init_rng, input_shapes)
+    init_batch = jnp.ones(input_shapes, jnp.float32)
+    init_variables = TD3Critic().init(init_rng, init_batch)
 
-    return nn.Model(critic, init_params)
+    return dict(params=init_variables["params"])
 
 
 def build_double_critic_model(input_shapes, init_rng):
-    critic = DoubleCritic.partial()
-    _, init_params = critic.init_by_shape(init_rng, input_shapes)
+    init_batch = jnp.ones(input_shapes, jnp.float32)
+    init_variables = DoubleCritic().init(init_rng, init_batch)
 
-    return nn.Model(critic, init_params)
+    return dict(params=init_variables["params"])
 
 
 def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
-    actor = GaussianPolicy.partial(action_dim=action_dim, max_action=max_action)
-    _, init_params = actor.init_by_shape(init_rng, input_shapes)
+    init_batch = jnp.ones(input_shapes, jnp.float32)
+    init_variables = GaussianPolicy(action_dim=action_dim, max_action=max_action).init(
+        init_rng, init_batch
+    )
 
-    return nn.Model(actor, init_params)
+    return dict(params=init_variables["params"])

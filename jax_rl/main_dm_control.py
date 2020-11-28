@@ -14,9 +14,9 @@ def flat_obs(o):
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
 def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
-    eval_env = suite.load(domain_name, task_name, {'random': seed+100})
+    eval_env = suite.load(domain_name, task_name, {"random": seed + 100})
 
-    avg_reward = 0.
+    avg_reward = 0.0
     for _ in range(eval_episodes):
         timestep = eval_env.reset()
         while not timestep.last():
@@ -35,25 +35,53 @@ def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy", default="TD3")                  # Policy name (TD3, SAC, or MPO)
-    parser.add_argument("--domain_name", default="cartpole")          # DeepMind control suite environment name
-    parser.add_argument("--task_name", default="swingup")           # Task name within environment
+    parser.add_argument("--policy", default="TD3")  # Policy name (TD3, SAC, or MPO)
+    parser.add_argument(
+        "--domain_name", default="cartpole"
+    )  # DeepMind control suite environment name
+    parser.add_argument(
+        "--task_name", default="swingup"
+    )  # Task name within environment
     parser.add_argument("--train_steps", default=1, type=int)
-    parser.add_argument("--seed", default=0, type=int)              # Sets DM control and JAX seeds
-    parser.add_argument("--start_timesteps", default=1e4, type=int) # Time steps initial random policy is used
-    parser.add_argument("--buffer_size", default=2e6, type=int)     # Max size of replay buffer
-    parser.add_argument("--eval_freq", default=5e3, type=int)       # How often (time steps) we evaluate
-    parser.add_argument("--max_timesteps", default=1e6, type=int)   # Max time steps to run environment
-    parser.add_argument("--expl_noise", default=0.1)                # Std of Gaussian exploration noise
-    parser.add_argument("--batch_size", default=256, type=int)      # Batch size for both actor and critic
-    parser.add_argument("--discount", default=0.99)                 # Discount factor
-    parser.add_argument("--tau", default=0.005)                     # Target network update rate
-    parser.add_argument("--policy_noise", default=0.2)              # Noise added to target policy during critic update
-    parser.add_argument("--noise_clip", default=0.5)                # Range to clip target policy noise
-    parser.add_argument("--policy_freq", default=2, type=int)       # Frequency of delayed policy updates
-    parser.add_argument("--actor_updates", default=1, type=int)     # Number of gradient steps for policy network per update
-    parser.add_argument("--save_model", action="store_true")        # Save model and optimizer parameters
-    parser.add_argument("--load_model", default="")                 # Model load file name, "" doesn't load, "default" uses file_name
+    parser.add_argument("--seed", default=0, type=int)  # Sets DM control and JAX seeds
+    parser.add_argument(
+        "--start_timesteps", default=1e4, type=int
+    )  # Time steps initial random policy is used
+    parser.add_argument(
+        "--buffer_size", default=2e6, type=int
+    )  # Max size of replay buffer
+    parser.add_argument(
+        "--eval_freq", default=5e3, type=int
+    )  # How often (time steps) we evaluate
+    parser.add_argument(
+        "--max_timesteps", default=1e6, type=int
+    )  # Max time steps to run environment
+    parser.add_argument(
+        "--expl_noise", default=0.1
+    )  # Std of Gaussian exploration noise
+    parser.add_argument(
+        "--batch_size", default=256, type=int
+    )  # Batch size for both actor and critic
+    parser.add_argument("--discount", default=0.99)  # Discount factor
+    parser.add_argument("--tau", default=0.005)  # Target network update rate
+    parser.add_argument(
+        "--policy_noise", default=0.2
+    )  # Noise added to target policy during critic update
+    parser.add_argument(
+        "--noise_clip", default=0.5
+    )  # Range to clip target policy noise
+    parser.add_argument(
+        "--policy_freq", default=2, type=int
+    )  # Frequency of delayed policy updates
+    parser.add_argument(
+        "--actor_updates", default=1, type=int
+    )  # Number of gradient steps for policy network per update
+    parser.add_argument(
+        "--save_model", action="store_true"
+    )  # Save model and optimizer parameters
+    parser.add_argument(
+        "--load_model", default=""
+    )  # Model load file name, "" doesn't load, "default" uses file_name
     parser.add_argument("--num_action_samples", default=20, type=int)
     parser.add_argument("--save_freq", default=5e3, type=int)
     args = parser.parse_args()
@@ -72,7 +100,7 @@ if __name__ == "__main__":
     if not os.path.exists("./graphs"):
         os.makedirs("./graphs")
 
-    env = suite.load(args.domain_name, args.task_name, {'random': args.seed})
+    env = suite.load(args.domain_name, args.task_name, {"random": args.seed})
 
     # Set seeds
     np.random.seed(args.seed)
@@ -108,7 +136,9 @@ if __name__ == "__main__":
         policy_file = file_name if args.load_model == "default" else args.load_model
         policy.load(f"./models/{policy_file}")
 
-    replay_buffer = utils.ReplayBuffer(state_dim, action_dim, max_size=int(args.buffer_size))
+    replay_buffer = utils.ReplayBuffer(
+        state_dim, action_dim, max_size=int(args.buffer_size)
+    )
 
     # Evaluate untrained policy
     evaluations = [eval_policy(policy, args.domain_name, args.task_name, args.seed)]
@@ -126,9 +156,11 @@ if __name__ == "__main__":
 
         # Select action randomly or according to policy
         if t < args.start_timesteps:
-            action = np.random.uniform(env.action_spec().minimum,
-                                       env.action_spec().maximum,
-                                       size=env.action_spec().shape)
+            action = np.random.uniform(
+                env.action_spec().minimum,
+                env.action_spec().maximum,
+                size=env.action_spec().shape,
+            )
         else:
             action = (policy.select_action(state)).clip(-max_action, max_action)
 
@@ -137,8 +169,9 @@ if __name__ == "__main__":
         done_bool = float(timestep.last())
 
         # Store data in replay buffer
-        replay_buffer.add(state, action, flat_obs(timestep.observation),
-                          timestep.reward, done_bool)
+        replay_buffer.add(
+            state, action, flat_obs(timestep.observation), timestep.reward, done_bool
+        )
 
         episode_reward += timestep.reward
 
@@ -146,14 +179,17 @@ if __name__ == "__main__":
         if t >= args.start_timesteps:
             for _ in range(args.train_steps):
                 if args.policy == "MPO":
-                    policy.train(replay_buffer, args.batch_size,
-                                 args.num_action_samples)
+                    policy.train(
+                        replay_buffer, args.batch_size, args.num_action_samples
+                    )
                 else:
                     policy.train(replay_buffer, args.batch_size)
 
         if timestep.last():
             # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
-            print(f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward:.3f}")
+            print(
+                f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward:.3f}"
+            )
             # Reset environment
             timestep = env.reset()
             episode_reward = 0
@@ -162,8 +198,10 @@ if __name__ == "__main__":
 
         # Evaluate episode
         if (t + 1) % args.eval_freq == 0:
-            evaluations.append(eval_policy(policy, args.domain_name,
-                                           args.task_name, args.seed))
+            evaluations.append(
+                eval_policy(policy, args.domain_name, args.task_name, args.seed)
+            )
             np.save(f"./results/{file_name}", evaluations)
         if (t + 1) % args.save_freq == 0:
-            if args.save_model: policy.save(f"./models/{file_name}_" + str(t+1))
+            if args.save_model:
+                policy.save(f"./models/{file_name}_" + str(t + 1))
