@@ -1,15 +1,16 @@
 from flax import optim
+from flax import linen as nn
 import jax
 from jax import random
 import jax.numpy as jnp
 from haiku import PRNGSequence
 
-from models import TD3Actor
-from models import TD3Critic
-from models import build_td3_actor_model
-from models import build_td3_critic_model
-from utils import double_mse, apply_model, copy_params
-from saving import save_model, load_model
+from jax_rl.models import TD3Actor
+from jax_rl.models import TD3Critic
+from jax_rl.models import build_td3_actor_model
+from jax_rl.models import build_td3_critic_model
+from jax_rl.utils import double_mse, apply_model, copy_params
+from jax_rl.saving import save_model, load_model
 
 
 @jax.jit
@@ -24,6 +25,8 @@ def get_td_target(
     policy_noise: float,
     noise_clip: float,
     max_action: float,
+    actor: nn.Module,
+    critic: nn.Module,
     actor_target_params: dict,
     critic_target_params: dict,
 ) -> jnp.ndarray:
@@ -31,9 +34,15 @@ def get_td_target(
         random.normal(rng, action.shape) * policy_noise, -noise_clip, noise_clip
     )
 
-    next_action = jnp.clip(actor_target(next_state) + noise, -max_action, max_action)
+    next_action = jnp.clip(
+        apply_model(actor_module, actor_target_params, next_state) + noise,
+        -max_action,
+        max_action,
+    )
 
-    target_Q1, target_Q2 = critic_target(next_state, next_action)
+    target_Q1, target_Q2 = apply_model(
+        critic_module, critic_target_params, next_state, next_action
+    )
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
 
@@ -57,11 +66,22 @@ def critic_step(
 
 
 @jax.jit
-def actor_step(optimizer, critic, state):
+def actor_step(
+    optimizer: optim.Optimizer,
+    critic_module: nn.Module,
+    critic_params: dict,
+    state: jnp.ndarray,
+) -> optim.Optimizer:
     critic = critic.target
 
     def loss_fn(actor):
-        actor_loss = -critic(state, actor(state), Q1=True)
+        actor_loss = -apply_model(
+            critic_module,
+            critic_params,
+            state,
+            apply_model(actor_module, actor, state),
+            Q1=True,
+        )
         return jnp.mean(actor_loss)
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -71,42 +91,40 @@ def actor_step(optimizer, critic, state):
 class TD3:
     def __init__(
         self,
-        state_dim,
-        action_dim,
-        max_action,
-        lr=3e-4,
-        discount=0.99,
-        tau=0.005,
-        policy_noise=0.2,
-        expl_noise=0.1,
-        noise_clip=0.5,
-        policy_freq=2,
-        seed=0,
+        state_dim: int,
+        action_dim: int,
+        max_action: float,
+        lr: float = 3e-4,
+        discount: float = 0.99,
+        tau: float = 0.005,
+        policy_noise: float = 0.2,
+        expl_noise: float = 0.1,
+        noise_clip: float = 0.5,
+        policy_freq: int = 2,
+        seed: int = 0,
     ):
-
         self.rng = PRNGSequence(seed)
 
-        actor_input_dim = [((1, state_dim), jnp.float32)]
+        actor_input_dim = (1, state_dim)
 
         init_rng = next(self.rng)
 
-        actor = build_td3_actor_model(actor_input_dim, action_dim, max_action, init_rng)
-        self.actor_target = build_td3_actor_model(
+        self.actor, actor_params = build_td3_actor_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
-        actor_optimizer = optim.Adam(learning_rate=lr).create(actor)
+        _, self.actor_target_params = build_td3_actor_model(
+            actor_input_dim, action_dim, max_action, init_rng
+        )
+        actor_optimizer = optim.Adam(learning_rate=lr).create(actor_params)
         self.actor_optimizer = jax.device_put(actor_optimizer)
 
         init_rng = next(self.rng)
 
-        critic_input_dim = [
-            ((1, state_dim), jnp.float32),
-            ((1, action_dim), jnp.float32),
-        ]
+        critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        critic = build_td3_critic_model(critic_input_dim, init_rng)
-        self.critic_target = build_td3_critic_model(critic_input_dim, init_rng)
-        critic_optimizer = optim.Adam(learning_rate=lr).create(critic)
+        self.critic, critic_params = build_td3_critic_model(critic_input_dim, init_rng)
+        _, self.critic_target_params = build_td3_critic_model(critic_input_dim, init_rng)
+        critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
         self.max_action = max_action
@@ -126,21 +144,23 @@ class TD3:
             self.policy_noise,
             self.noise_clip,
             self.max_action,
-            self.actor_target,
-            self.critic_target,
+            self.actor,
+            self.critic,
+            self.actor_target_params,
+            self.critic_target_params,
         )
 
-    def select_action(self, state):
-        return apply_model(self.actor_optimizer.target, state).flatten()
+    def select_action(self, state: jnp.ndarray):
+        return apply_model(self.actor, self.actor_optimizer.target, state.reshape(1, -1)).flatten()
 
-    def sample_action(self, state):
+    def sample_action(self, state: jnp.ndarray):
         return self.select_action(
             state
         ) + self.max_action * self.expl_noise * random.normal(
             next(self.rng), self.action_dim
         )
 
-    def train(self, replay_buffer, batch_size=100):
+    def train(self, replay_buffer, batch_size: int = 100):
         self.total_it += 1
 
         buffer_out = replay_buffer.sample(next(self.rng), batch_size)
@@ -161,26 +181,22 @@ class TD3:
                 self.actor_optimizer, self.critic_optimizer, state
             )
 
-            self.critic_target = copy_params(
-                self.critic_optimizer.target, self.critic_target, self.tau
+            self.critic_target_params = copy_params(
+                self.critic_optimizer.target, self.critic_target_params, self.tau
             )
-            self.actor_target = copy_params(
-                self.actor_optimizer.target, self.actor_target, self.tau
+            self.actor_target_params = copy_params(
+                self.actor_optimizer.target, self.actor_target_params, self.tau
             )
 
-    def save(self, filename):
+    def save(self, filename: str):
         save_model(filename + "_critic", self.critic_optimizer)
         save_model(filename + "_actor", self.actor_optimizer)
 
-    def load(self, filename):
+    def load(self, filename: str):
         self.critic_optimizer = load_model(filename + "_critic", self.critic_optimizer)
         self.critic_optimizer = jax.device_put(self.critic_optimizer)
-        self.critic_target = self.critic_target.replace(
-            params=self.critic_optimizer.target.params
-        )
+        self.critic_target_params = self.critic_optimizer.target
 
         self.actor_optimizer = load_model(filename + "_actor", self.actor_optimizer)
         self.actor_optimizer = jax.device_put(self.actor_optimizer)
-        self.actor_target = self.actor_target.replace(
-            params=self.actor_optimizer.target.params
-        )
+        self.actor_target_params = self.actor_optimizer.target

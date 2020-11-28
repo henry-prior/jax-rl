@@ -1,5 +1,6 @@
 from haiku import PRNGSequence
 from flax import linen as nn
+import functools
 import jax
 import jax.numpy as jnp
 from jax import random
@@ -59,9 +60,10 @@ def mse(pred: jnp.ndarray, true: jnp.ndarray) -> float:
     return jnp.square(true - pred).mean()
 
 
-@jax.jit
-def apply_model(model: nn.Module, x: jnp.ndarray, *args, **kwargs) -> jnp.ndarray:
-    return model(x.reshape(1, -1), *args, **kwargs)
+#@functools.partial(jax.jit, static_argnums=0)
+# TODO: can we `jit` this still?
+def apply_model(model: nn.Module, params, *args, **kwargs) -> jnp.ndarray:
+    return model.apply(dict(params=params), *args, **kwargs)
 
 
 @jax.jit
