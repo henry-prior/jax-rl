@@ -9,9 +9,31 @@ Core Deep Reinforcement Learning algorithms using JAX for improved performance r
 - [x] MPO
 - [ ] A2C/A3C
 
+# Migrating to Linen
+
+`flax` has a new interfact for models which requires a decent amount of changes. The folowing have been updated:
+ - [x] TD3
+ - [x] SAC
+ - [ ] MPO
+
+
+## Environment and Testing
+
+This repo makes use of the `poetry` package and dependency management tool. To build a local environment with all necessary packages run:
+
+```bash
+make install
+```
+
+To test local changes run:
+
+```bash
+make test
+```
+
 # Run
 
-To test each algorithm on cartpole swingup:
+To run each algorithm on cartpole swingup:
 
 ```bash
 python main_dm_control.py --max_timestep 100000
