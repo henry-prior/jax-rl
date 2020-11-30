@@ -1,7 +1,0 @@
-dm-control==0.0.300771433
-flax==0.1.0rc2
-git+https://github.com/deepmind/dm-haiku
-jax==0.1.62
-jaxlib==0.1.43
-numpy==1.18.2
-tensorflow==2.1.2
