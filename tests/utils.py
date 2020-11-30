@@ -1,5 +1,5 @@
-import pytest
 import numpy as onp
+import pytest
 from dm_control import suite
 
 

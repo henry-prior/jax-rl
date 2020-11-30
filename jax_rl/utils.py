@@ -1,10 +1,9 @@
-from haiku import PRNGSequence
-from flax import linen as nn
-import functools
 import jax
 import jax.numpy as jnp
-from jax import random
 import numpy as onp
+from flax import linen as nn
+from haiku import PRNGSequence
+from jax import random
 
 
 class ReplayBuffer:

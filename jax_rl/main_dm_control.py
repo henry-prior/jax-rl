@@ -1,10 +1,13 @@
-import os
 import argparse
+import os
+
 import numpy as np
 from dm_control import suite
 
+import MPO
+import SAC
+import TD3
 import utils
-import TD3, SAC, MPO
 
 
 def flat_obs(o):
@@ -188,7 +191,8 @@ if __name__ == "__main__":
         if timestep.last():
             # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
             print(
-                f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward:.3f}"
+                f"Total T: {t+1} Episode Num: {episode_num+1} "
+                "Episode T: {episode_timesteps} Reward: {episode_reward:.3f}"
             )
             # Reset environment
             timestep = env.reset()
