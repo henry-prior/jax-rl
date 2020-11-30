@@ -1,17 +1,17 @@
-from flax.core.frozen_dict import FrozenDict
-from flax import optim
-from flax import linen as nn
 import jax
-from jax import random
 import jax.numpy as jnp
+from flax import optim
+from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
+from jax import random
 
-from jax_rl.models import TD3Actor
-from jax_rl.models import TD3Critic
 from jax_rl.models import build_td3_actor_model
 from jax_rl.models import build_td3_critic_model
-from jax_rl.utils import double_mse, apply_model, copy_params
-from jax_rl.saving import save_model, load_model
+from jax_rl.saving import load_model
+from jax_rl.saving import save_model
+from jax_rl.utils import apply_model
+from jax_rl.utils import copy_params
+from jax_rl.utils import double_mse
 
 
 @jax.jit

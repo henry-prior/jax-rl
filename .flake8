@@ -1,6 +1,6 @@
 [flake8]
-select = B,B9,C,E,F,N,W, E401
-ignore = E203,E501,W503,C901,B008, N806, N803
+select = B,B9,C,E,F,N,W,E401
+ignore = E203,E501,W503,C901,B008,N806,N803,B950
 max-line-length = 88
 max-complexity = 10
 docstring-convention = google

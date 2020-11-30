@@ -1,20 +1,20 @@
-from typing import Tuple
 from functools import partial
+from typing import Tuple
+
 import jax
 import jax.numpy as jnp
 from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 
-from jax_rl.utils import double_mse
-from jax_rl.utils import sample_from_multivariate_normal
+from jax_rl.models import build_constant_model
+from jax_rl.models import build_double_critic_model
+from jax_rl.models import build_gaussian_policy_model
+from jax_rl.saving import load_model
+from jax_rl.saving import save_model
 from jax_rl.utils import apply_model
 from jax_rl.utils import copy_params
-from jax_rl.saving import save_model
-from jax_rl.saving import load_model
-from jax_rl.models import build_gaussian_policy_model
-from jax_rl.models import build_double_critic_model
-from jax_rl.models import build_constant_model
+from jax_rl.utils import double_mse
 
 
 def actor_loss_fn(log_alpha: jnp.ndarray, log_p: jnp.ndarray, min_q: jnp.ndarray):
@@ -186,7 +186,7 @@ class SAC:
 
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_model(actor, self.actor_optimizer.target, state)
-        return mu + random.normal(rng, mu.shape) * jnp.exp(log_sig)
+        return mu + jax.random.normal(rng, mu.shape) * jnp.exp(log_sig)
 
     def train(self, replay_buffer, batch_size=100):
         self.total_it += 1

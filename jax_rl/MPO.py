@@ -1,24 +1,25 @@
-from typing import Any, Tuple
 from functools import partial
+from typing import Any
+from typing import Tuple
+
 import jax
+import jax.numpy as jnp
+from flax import linen as nn
+from flax import optim
+from flax.core.frozen_dict import FrozenDict
+from haiku import PRNGSequence
 from jax import random
 from jax.scipy.special import logsumexp
-import jax.numpy as jnp
-import numpy as onp
-from flax.core.frozen_dict import FrozenDict
-from flax import optim
-from flax import linen as nn
-from haiku import PRNGSequence
 
-from jax_rl.saving import save_model
+from jax_rl.models import build_constant_model
+from jax_rl.models import build_double_critic_model
+from jax_rl.models import build_gaussian_policy_model
 from jax_rl.saving import load_model
+from jax_rl.saving import save_model
 from jax_rl.utils import apply_model
 from jax_rl.utils import double_mse
 from jax_rl.utils import gaussian_likelihood
 from jax_rl.utils import kl_mvg_diag
-from jax_rl.models import build_gaussian_policy_model
-from jax_rl.models import build_double_critic_model
-from jax_rl.models import build_constant_model
 
 
 def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict:

@@ -1,11 +1,8 @@
-import numpy as onp
 import pytest
-from dm_control import suite
+
 from .utils import cartpole_environment
 from .utils import flat_obs
-
 from jax_rl import SAC
-from jax_rl import utils
 
 
 @pytest.fixture

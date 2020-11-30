@@ -42,4 +42,3 @@ python jax_rl/main_dm_control.py --max_timestep 100000
 ```bash
 python jax_rl/main_dm_control.py --policy SAC --max_timesteps 100000
 ```
-

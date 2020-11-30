@@ -14,12 +14,15 @@ jaxlib = "0.1.57"
 numpy = "1.18.4"
 tensorflow = "2.1.2"
 tensorflow_estimator = "==2.1.0"
-reorder-python-imports = "^2.3.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"
+responses = "^0.10.15"
+coverage = {extras = ["toml"], version = "^5.2"}
+safety = "^1.9.0"
 mypy = "^0.782"
 xdoctest = "^0.13.0"
+pre-commit = "^2.6.0"
 flake8 = "^3.8.3"
 black = "^19.10b0"
 flake8-bandit = "^2.1.2"
@@ -29,6 +32,11 @@ flake8-rst-docstrings = "^0.0.13"
 pep8-naming = "^0.11.1"
 darglint = "^1.5.1"
 reorder-python-imports = "^2.3.1"
+pre-commit-hooks = "^3.1.0"
+nox = "^2020.5.24"
+pytest-cov = "^2.10.0"
+testfixtures = "^6.14.1"
+pytest-subprocess = "^0.1.5"
 
 [build-system]
 requires = ["poetry>=0.12"]

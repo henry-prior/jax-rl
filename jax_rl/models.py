@@ -1,8 +1,6 @@
-from flax import linen as nn
-import jax
-from jax import random
 import jax.numpy as jnp
-import numpy as onp
+from flax import linen as nn
+from jax import random
 
 from jax_rl.utils import gaussian_likelihood
 
@@ -115,7 +113,6 @@ class Constant(nn.Module):
 
 
 def build_constant_model(start_value, init_rng, absolute=False):
-    init_batch = jnp.ones((1,), jnp.float32)
     constant = Constant(start_value=start_value, absolute=absolute)
     init_variables = constant.init(init_rng)
 

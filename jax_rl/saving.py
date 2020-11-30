@@ -1,6 +1,7 @@
 import os
-from flax import serialization
+
 from flax import linen as nn
+from flax import serialization
 from tensorflow.compat.v2.io import gfile
 
 

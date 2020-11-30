@@ -1,9 +1,9 @@
 import numpy as onp
 import pytest
 from dm_control import suite
+
 from .utils import cartpole_environment
 from .utils import flat_obs
-
 from jax_rl import TD3
 from jax_rl import utils
 
