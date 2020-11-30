@@ -1,3 +1,4 @@
+from flax.core.frozen_dict import FrozenDict
 from flax import optim
 from flax import linen as nn
 import jax
@@ -25,23 +26,21 @@ def get_td_target(
     policy_noise: float,
     noise_clip: float,
     max_action: float,
-    actor: nn.Module,
-    critic: nn.Module,
-    actor_target_params: dict,
-    critic_target_params: dict,
+    actor_target_params: FrozenDict,
+    critic_target_params: FrozenDict,
 ) -> jnp.ndarray:
     noise = jnp.clip(
         random.normal(rng, action.shape) * policy_noise, -noise_clip, noise_clip
     )
 
     next_action = jnp.clip(
-        apply_model(actor_module, actor_target_params, next_state) + noise,
+        apply_model(actor, actor_target_params, next_state) + noise,
         -max_action,
         max_action,
     )
 
     target_Q1, target_Q2 = apply_model(
-        critic_module, critic_target_params, next_state, next_action
+        critic, critic_target_params, next_state, next_action
     )
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
@@ -56,8 +55,8 @@ def critic_step(
     action: jnp.ndarray,
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
-    def loss_fn(critic):
-        current_Q1, current_Q2 = critic(state, action)
+    def loss_fn(critic_params):
+        current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -65,21 +64,17 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.jit
+# @jax.jit
 def actor_step(
-    optimizer: optim.Optimizer,
-    critic_module: nn.Module,
-    critic_params: dict,
-    state: jnp.ndarray,
+    optimizer: optim.Optimizer, critic_params: FrozenDict, state: jnp.ndarray,
 ) -> optim.Optimizer:
-    critic = critic.target
 
-    def loss_fn(actor):
+    def loss_fn(actor_params):
         actor_loss = -apply_model(
-            critic_module,
+            critic,
             critic_params,
             state,
-            apply_model(actor_module, actor, state),
+            apply_model(actor, actor_params, state),
             Q1=True,
         )
         return jnp.mean(actor_loss)
@@ -109,7 +104,9 @@ class TD3:
 
         init_rng = next(self.rng)
 
-        self.actor, actor_params = build_td3_actor_model(
+        # TODO: has to be a cleaner way to do this
+        global actor
+        actor, actor_params = build_td3_actor_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
         _, self.actor_target_params = build_td3_actor_model(
@@ -122,8 +119,12 @@ class TD3:
 
         critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        self.critic, critic_params = build_td3_critic_model(critic_input_dim, init_rng)
-        _, self.critic_target_params = build_td3_critic_model(critic_input_dim, init_rng)
+        # TODO: has to be a cleaner way to do this
+        global critic
+        critic, critic_params = build_td3_critic_model(critic_input_dim, init_rng)
+        _, self.critic_target_params = build_td3_critic_model(
+            critic_input_dim, init_rng
+        )
         critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
@@ -144,14 +145,14 @@ class TD3:
             self.policy_noise,
             self.noise_clip,
             self.max_action,
-            self.actor,
-            self.critic,
             self.actor_target_params,
             self.critic_target_params,
         )
 
     def select_action(self, state: jnp.ndarray):
-        return apply_model(self.actor, self.actor_optimizer.target, state.reshape(1, -1)).flatten()
+        return apply_model(
+            actor, self.actor_optimizer.target, state.reshape(1, -1)
+        ).flatten()
 
     def sample_action(self, state: jnp.ndarray):
         return self.select_action(

@@ -2,52 +2,67 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from flax import optim
+from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 
-from utils import double_mse, sample_from_multivariate_normal, apply_model, copy_params
-from saving import save_model, load_model
-from models import (
-    build_gaussian_policy_model,
-    build_double_critic_model,
-    build_constant_model,
-)
+from jax_rl.utils import double_mse
+from jax_rl.utils import sample_from_multivariate_normal
+from jax_rl.utils import apply_model
+from jax_rl.utils import copy_params
+from jax_rl.saving import save_model
+from jax_rl.saving import load_model
+from jax_rl.models import build_gaussian_policy_model
+from jax_rl.models import build_double_critic_model
+from jax_rl.models import build_constant_model
 
 
-def actor_loss_fn(log_alpha, log_p, min_q):
+def actor_loss_fn(log_alpha: jnp.ndarray, log_p: jnp.ndarray, min_q: jnp.ndarray):
     return (jnp.exp(log_alpha) * log_p - min_q).mean()
 
 
-def alpha_loss_fn(log_alpha, target_entropy, log_p):
+def alpha_loss_fn(log_alpha: jnp.ndarray, target_entropy: float, log_p: jnp.ndarray):
     return (log_alpha * (-log_p - target_entropy)).mean()
 
 
 @jax.jit
 def get_td_target(
-    rng,
-    state,
-    action,
-    next_state,
-    reward,
-    not_done,
-    discount,
-    max_action,
-    actor,
-    critic_target,
-    log_alpha,
+    rng: PRNGSequence,
+    state: jnp.ndarray,
+    action: jnp.ndarray,
+    next_state: jnp.ndarray,
+    reward: jnp.ndarray,
+    not_done: jnp.ndarray,
+    discount: float,
+    max_action: float,
+    actor_params: FrozenDict,
+    critic_target_params: FrozenDict,
+    log_alpha_params: FrozenDict,
 ):
-    next_action, next_log_p = actor(next_state, sample=True, key=rng)
+    next_action, next_log_p = apply_model(
+        actor, actor_params, next_state, sample=True, key=rng
+    )
 
-    target_Q1, target_Q2 = critic_target(next_state, next_action)
-    target_Q = jnp.minimum(target_Q1, target_Q2) - jnp.exp(log_alpha()) * next_log_p
+    target_Q1, target_Q2 = apply_model(
+        critic, critic_target_params, next_state, next_action
+    )
+    target_Q = (
+        jnp.minimum(target_Q1, target_Q2)
+        - jnp.exp(apply_model(log_alpha, log_alpha_params)) * next_log_p
+    )
     target_Q = reward + not_done * discount * target_Q
 
     return target_Q
 
 
 @jax.jit
-def critic_step(optimizer, state, action, target_Q):
-    def loss_fn(critic):
-        current_Q1, current_Q2 = critic(state, action)
+def critic_step(
+    optimizer: optim.Optimizer,
+    state: jnp.ndarray,
+    action: jnp.ndarray,
+    target_Q: jnp.ndarray,
+):
+    def loss_fn(critic_params):
+        current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -56,15 +71,24 @@ def critic_step(optimizer, state, action, target_Q):
 
 
 @jax.jit
-def actor_step(rng, optimizer, critic, state, log_alpha):
-    critic, log_alpha = critic.target, log_alpha.target
-
-    def loss_fn(actor):
-        actor_action, log_p = actor(state, sample=True, key=rng)
-        q1, q2 = critic(state, actor_action)
+def actor_step(
+    rng: PRNGSequence,
+    optimizer: optim.Optimizer,
+    critic_params: FrozenDict,
+    state: jnp.ndarray,
+    log_alpha_params: FrozenDict,
+):
+    def loss_fn(actor_params):
+        actor_action, log_p = apply_model(
+            actor, actor_params, state, sample=True, key=rng
+        )
+        q1, q2 = apply_model(critic, critic_params, state, actor_action)
         min_q = jnp.minimum(q1, q2)
         partial_loss_fn = jax.vmap(
-            partial(actor_loss_fn, jax.lax.stop_gradient(log_alpha()))
+            partial(
+                actor_loss_fn,
+                jax.lax.stop_gradient(apply_model(log_alpha, log_alpha_params)),
+            ),
         )
         actor_loss = partial_loss_fn(log_p, min_q)
         return jnp.mean(actor_loss), log_p
@@ -74,11 +98,15 @@ def actor_step(rng, optimizer, critic, state, log_alpha):
 
 
 @jax.jit
-def alpha_step(optimizer, log_p, target_entropy):
+def alpha_step(optimizer: optim.Optimizer, log_p: jnp.ndarray, target_entropy: float):
     log_p = jax.lax.stop_gradient(log_p)
 
-    def loss_fn(log_alpha):
-        partial_loss_fn = jax.vmap(partial(alpha_loss_fn, log_alpha(), target_entropy))
+    def loss_fn(log_alpha_params):
+        partial_loss_fn = jax.vmap(
+            partial(
+                alpha_loss_fn, apply_model(log_alpha, log_alpha_params), target_entropy
+            )
+        )
         return jnp.mean(partial_loss_fn(log_p))
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -88,43 +116,47 @@ def alpha_step(optimizer, log_p, target_entropy):
 class SAC:
     def __init__(
         self,
-        state_dim,
-        action_dim,
-        max_action,
-        discount=0.99,
-        tau=0.005,
-        policy_freq=2,
-        lr=3e-4,
-        entropy_tune=True,
-        seed=0,
+        state_dim: int,
+        action_dim: int,
+        max_action: float,
+        discount: float = 0.99,
+        tau: float = 0.005,
+        policy_freq: int = 2,
+        lr: float = 3e-4,
+        entropy_tune: bool = True,
+        seed: int = 0,
     ):
-
         self.rng = PRNGSequence(seed)
 
-        actor_input_dim = [((1, state_dim), jnp.float32)]
+        actor_input_dim = (1, state_dim)
 
-        actor = build_gaussian_policy_model(
+        # TODO: has to be a cleaner way to do this
+        global actor
+        actor, actor_params = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, next(self.rng)
         )
-        actor_optimizer = optim.Adam(learning_rate=lr).create(actor)
+        actor_optimizer = optim.Adam(learning_rate=lr).create(actor_params)
         self.actor_optimizer = jax.device_put(actor_optimizer)
 
         init_rng = next(self.rng)
 
-        critic_input_dim = [
-            ((1, state_dim), jnp.float32),
-            ((1, action_dim), jnp.float32),
-        ]
+        critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        critic = build_double_critic_model(critic_input_dim, init_rng)
-        self.critic_target = build_double_critic_model(critic_input_dim, init_rng)
-        critic_optimizer = optim.Adam(learning_rate=lr).create(critic)
+        # TODO: has to be a cleaner way to do this
+        global critic
+        critic, critic_params = build_double_critic_model(critic_input_dim, init_rng)
+        _, self.critic_target_params = build_double_critic_model(
+            critic_input_dim, init_rng
+        )
+        critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
         self.entropy_tune = entropy_tune
 
-        log_alpha = build_constant_model(-3.5, next(self.rng))
-        log_alpha_optimizer = optim.Adam(learning_rate=lr).create(log_alpha)
+        # TODO: has to be a cleaner way to do this
+        global log_alpha
+        log_alpha, log_alpha_params = build_constant_model(-3.5, next(self.rng))
+        log_alpha_optimizer = optim.Adam(learning_rate=lr).create(log_alpha_params)
         self.log_alpha_optimizer = jax.device_put(log_alpha_optimizer)
         self.target_entropy = -action_dim
 
@@ -141,16 +173,16 @@ class SAC:
             self.discount,
             self.max_action,
             self.actor_optimizer.target,
-            self.critic_target,
+            self.critic_target_params,
             self.log_alpha_optimizer.target,
         )
 
-    def select_action(self, state):
-        mu, _ = apply_model(self.actor_optimizer.target, state)
+    def select_action(self, state: jnp.ndarray) -> jnp.ndarray:
+        mu, _ = apply_model(actor, self.actor_optimizer.target, state)
         return mu.flatten()
 
-    def sample_action(self, rng, state):
-        mu, log_sig = apply_model(self.actor_optimizer.target, state)
+    def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
+        mu, log_sig = apply_model(actor, self.actor_optimizer.target, state)
         return mu + random.normal(rng, mu.shape) * jnp.exp(log_sig)
 
     def train(self, replay_buffer, batch_size=100):

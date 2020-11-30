@@ -50,7 +50,7 @@ class DoubleCritic(nn.Module):
         state_action = jnp.concatenate([state, action], axis=1)
 
         q1 = nn.Dense(features=500)(state_action)
-        q1 = nn.LayerNorm(q1)
+        q1 = nn.LayerNorm()(q1)
         q1 = nn.tanh(q1)
         q1 = nn.Dense(features=500)(q1)
         q1 = nn.elu(q1)
@@ -60,7 +60,7 @@ class DoubleCritic(nn.Module):
             return q1
 
         q2 = nn.Dense(features=500)(state_action)
-        q2 = nn.LayerNorm(q2)
+        q2 = nn.LayerNorm()(q2)
         q2 = nn.tanh(q2)
         q2 = nn.Dense(features=500)(q2)
         q2 = nn.elu(q2)
@@ -76,9 +76,9 @@ class GaussianPolicy(nn.Module):
     log_sig_max: float = 2.0
 
     @nn.compact
-    def apply(self, x, key=None, MPO=False, sample=False):
+    def __call__(self, x, key=None, MPO=False, sample=False):
         x = nn.Dense(features=200)(x)
-        x = nn.LayerNorm(x)
+        x = nn.LayerNorm()(x)
         x = nn.tanh(x)
         x = nn.Dense(features=200)(x)
         x = nn.elu(x)
@@ -86,7 +86,7 @@ class GaussianPolicy(nn.Module):
 
         mu, log_sig = jnp.split(x, 2, axis=-1)
         log_sig = nn.softplus(log_sig)
-        log_sig = jnp.clip(log_sig, log_sig_min, log_sig_max)
+        log_sig = jnp.clip(log_sig, self.log_sig_min, self.log_sig_max)
 
         if MPO:
             return mu, log_sig
@@ -103,16 +103,18 @@ class GaussianPolicy(nn.Module):
 
 
 class Constant(nn.Module):
+    start_value: float
+
     @nn.compact
-    def apply(self, start_value, dtype=jnp.float32):
-        value = self.param("value", (1,), nn.initializers.ones)
-        return start_value * jnp.asarray(value, dtype)
+    def __call__(self, dtype=jnp.float32):
+        value = self.param("value", nn.initializers.ones, (1,))
+        return self.start_value * jnp.asarray(value, dtype)
 
 
 def build_constant_model(start_value, init_rng):
     init_batch = jnp.ones((1,), jnp.float32)
-    constant = Constant()
-    init_variables = constant.init(init_rng, init_batch)
+    constant = Constant(start_value=start_value)
+    init_variables = constant.init(init_rng)
 
     return constant, init_variables["params"]
 
@@ -134,9 +136,9 @@ def build_td3_critic_model(input_shapes, init_rng):
 
 
 def build_double_critic_model(input_shapes, init_rng):
-    init_batch = jnp.ones(input_shapes, jnp.float32)
+    init_batch = [jnp.ones(shape, jnp.float32) for shape in input_shapes]
     critic = DoubleCritic()
-    init_variables = critic.init(init_rng, init_batch)
+    init_variables = critic.init(init_rng, *init_batch)
 
     return critic, init_variables["params"]
 
@@ -147,4 +149,3 @@ def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
     init_variables = policy.init(init_rng, init_batch)
 
     return policy, init_variables["params"]
-

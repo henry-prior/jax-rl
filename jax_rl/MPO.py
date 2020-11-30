@@ -4,38 +4,41 @@ from jax import random
 from jax.scipy.special import logsumexp
 import jax.numpy as jnp
 import numpy as onp
+from flax.core.frozen_dict import FrozenDict
 from flax import optim
-from flax import nn
+from flax import linen as nn
 from haiku import PRNGSequence
 
-from saving import save_model, load_model
-from utils import apply_model, double_mse, gaussian_likelihood, kl_mvg_diag
-from models import (
-    build_gaussian_policy_model,
-    build_double_critic_model,
-    build_constant_model,
-)
+from jax_rl.saving import save_model
+from jax_rl.saving import load_model
+from jax_rl.utils import apply_model
+from jax_rl.utils import double_mse
+from jax_rl.utils import gaussian_likelihood
+from jax_rl.utils import kl_mvg_diag
+from jax_rl.models import build_gaussian_policy_model
+from jax_rl.models import build_double_critic_model
+from jax_rl.models import build_constant_model
 
 
 @jax.jit
 def get_td_target(
-    rng,
-    state,
-    action,
-    next_state,
-    reward,
-    not_done,
-    discount,
-    max_action,
-    actor_target,
-    critic_target,
-):
+    rng: PRNGSequence,
+    state: jnp.ndarray,
+    action: jnp.ndarray,
+    next_state: jnp.ndarray,
+    reward: jnp.ndarray,
+    not_done: jnp.ndarray,
+    discount: float,
+    max_action: float,
+    actor_target_params: FrozenDict,
+    critic_target_params: FrozenDict,
+) -> jnp.ndarray:
 
-    mu, var = actor_target(next_state, MPO=True)
+    mu, var = apply_model(actor, actor_target_params, next_state, MPO=True)
     next_action = mu + var * random.normal(rng, mu.shape)
     next_action = max_action * jnp.tanh(next_action)
 
-    target_Q1, target_Q2 = critic_target(next_state, next_action)
+    target_Q1, target_Q2 = apply_model(critic, critic_target_params, next_state, next_action)
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
 
@@ -43,10 +46,12 @@ def get_td_target(
 
 
 @jax.jit
-def temp_step(optimizer, Q, eps_q, action_sample_size):
-    def loss_fn(temp):
-        lse = logsumexp(Q / temp(), axis=1) - jnp.log(action_sample_size)
-        temp_loss = temp() * (eps_q + lse.mean())
+def temp_step(
+    optimizer: optim.Optimizer, Q: jnp.ndarray, eps_q: float, action_sample_size: int
+) -> optim.Optimizer:
+    def loss_fn(temp_params):
+        lse = logsumexp(Q / apply_model(temp, temp_params), axis=1) - jnp.log(action_sample_size)
+        temp_loss = apply_model(temp, temp_params) * (eps_q + lse.mean())
         return jnp.mean(temp_loss)
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -54,22 +59,20 @@ def temp_step(optimizer, Q, eps_q, action_sample_size):
 
 
 @jax.jit
-def lagrange_step(optimizer, reg):
-    def loss_fn(lagrange):
-        return jnp.mean(lagrange() * reg)
+def lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
+    def loss_fn(lagrange_params):
+        return jnp.mean(apply_model(lagrange, lagrange_params) * reg)
 
     grad = jax.grad(loss_fn)(optimizer.target)
     return optimizer.apply_gradient(grad)
 
 
 @jax.jit
-def actor_step(optimizer, weights, log_p, mu_lagrange, reg_mu, sig_lagrange, reg_sig):
-    mu_lagrange, sig_lagrange = mu_lagrange.target, sig_lagrange.target
-
+def actor_step(optimizer: optim.Optimizer, weights: jnp.ndarray, log_p: jnp.ndarray, mu_lagrange_params: optim.Optimizer, reg_mu: float, sig_lagrange_params: FrozenDict, reg_sig: float) -> optim.Optimizer:
     def loss_fn(actor):
         actor_loss = -(jax.vmap(jnp.multiply)(weights, log_p)).sum(axis=1).mean()
-        actor_loss -= mu_lagrange() * reg_mu
-        actor_loss -= sig_lagrange() * reg_sig
+        actor_loss -= apply_model(mu_lagrange, mu_lagrange_params) * reg_mu
+        actor_loss -= apply_model(sig_lagrange, sig_lagrange_params) * reg_sig
         return actor_loss.mean()
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -78,19 +81,19 @@ def actor_step(optimizer, weights, log_p, mu_lagrange, reg_mu, sig_lagrange, reg
 
 @jax.partial(jax.jit, static_argnums=(4, 6, 7, 9, 10))
 def e_step(
-    rng,
-    actor_target,
-    critic_target,
-    max_action,
-    action_dim,
-    temp_optimizer,
-    eps_q,
-    temp_steps,
-    state,
-    batch_size,
-    action_sample_size,
-):
-    mu, log_sig = actor_target(state, MPO=True)
+    rng: PRNGSequence,
+    actor_target_params: FrozenDict,
+    critic_target_params: FrozenDict,
+    max_action: float,
+    action_dim: int,
+    temp_optimizer: optim.Optimizer,
+    eps_q: float,
+    temp_steps: int,
+    state: jnp.ndarray,
+    batch_size: int,
+    action_sample_size: int,
+) -> optim.Optimizer:
+    mu, log_sig = apply_model(actor, actor_target, state, MPO=True)
     sig = jnp.exp(log_sig)
     sampled_actions = mu + random.normal(rng, (mu.shape[0], action_sample_size)) * sig
     sampled_actions = jnp.clip(sampled_actions, -max_action, max_action).transpose(
@@ -103,7 +106,7 @@ def e_step(
 
     states_repeated = jnp.tile(state, (action_sample_size, 1))
 
-    Q1 = critic_target(states_repeated, sampled_actions, Q1=True)
+    Q1 = apply_model(critic, critic_target, states_repeated, sampled_actions, Q1=True)
     Q1 = Q1.reshape((batch_size, action_sample_size))
 
     Q1 = jax.lax.stop_gradient(Q1)
@@ -114,10 +117,8 @@ def e_step(
             0.0, temp_optimizer.target.params["value"]
         )
 
-    Z = jnp.sum(jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / temp_optimizer.target(), axis=1)[
-        :, None
-    ]
-    weights = jnp.exp((Q1 - jnp.max(Q1, axis=1)[0]) / temp_optimizer.target()) / Z
+    Z = jnp.sum(jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target), axis=1)[:, None]
+    weights = jnp.exp((Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target)) / Z
     weights = jax.lax.stop_gradient(weights)
 
     return temp_optimizer, weights, sampled_actions
@@ -125,21 +126,21 @@ def e_step(
 
 @jax.jit
 def m_step(
-    rngs,
-    actor_optimizer,
-    actor_target,
-    eps_mu,
-    eps_sig,
-    mu_lagrange_optimizer,
-    sig_lagrange_optimizer,
-    state,
-    weights,
-    sampled_actions,
-):
-    def loss_fn(mlo, slo, actor):
-        mu, log_sig = actor(state, MPO=True)
+    rngs: PRNGSequence,
+    actor_optimizer: optim.Optimizer,
+    actor_target_params: FrozenDict,
+    eps_mu: float,
+    eps_sig: float,
+    mu_lagrange_optimizer: optim.Optimizer,
+    sig_lagrange_optimizer: optim.Optimizer,
+    state: jnp.ndarray,
+    weights: jnp.ndarray,
+    sampled_actions: jnp.ndarray,
+) -> optim.Optimizer:
+    def loss_fn(mlo, slo, actor_params):
+        mu, log_sig = apply_model(actor, actor_params, state, MPO=True)
         sig = jnp.exp(log_sig)
-        target_mu, target_log_sig = actor_target(state, MPO=True)
+        target_mu, target_log_sig = apply_model(actor, actor_target, state, MPO=True)
         target_sig = jnp.exp(target_log_sig)
 
         actor_log_prob = gaussian_likelihood(sampled_actions, target_mu, sig)
@@ -157,8 +158,8 @@ def m_step(
         slo.target.params["value"] = jnp.maximum(0.0, slo.target.params["value"])
 
         actor_loss = -(actor_log_prob[:, None] * weights).sum(axis=1).mean()
-        actor_loss -= mu_lagrange_optimizer.target() * reg_mu
-        actor_loss -= sig_lagrange_optimizer.target() * reg_sig
+        actor_loss -= apply_model(mu_lagrange, mu_lagrange_optimizer.target) * reg_mu
+        actor_loss -= apply_model(sig_lagrange, sig_lagrange_optimizer.target) * reg_sig
         return actor_loss.mean(), (mlo, slo)
 
     grad, optims = jax.grad(
@@ -172,9 +173,9 @@ def m_step(
 
 
 @jax.jit
-def critic_step(optimizer, state, action, target_Q):
-    def loss_fn(critic):
-        current_Q1, current_Q2 = critic(state, action)
+def critic_step(optimizer: optim.Optimizer, state: jnp.ndarray, action: jnp.ndarray, target_Q: jnp.ndarray) -> optim.Optimizer:
+    def loss_fn(critic_params):
+        current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -185,55 +186,57 @@ def critic_step(optimizer, state, action, target_Q):
 class MPO:
     def __init__(
         self,
-        state_dim,
-        action_dim,
-        max_action,
-        discount=0.99,
-        lr=3e-4,
-        eps_q=0.1,
-        eps_mu=0.1,
-        eps_sig=1e-4,
-        temp_steps=10,
-        target_freq=250,
-        seed=0,
+        state_dim: int,
+        action_dim: int,
+        max_action: float,
+        discount: float = 0.99,
+        lr: float = 3e-4,
+        eps_q: float = 0.1,
+        eps_mu: float = 0.1,
+        eps_sig: float = 1e-4,
+        temp_steps: int = 10,
+        target_freq: int = 250,
+        seed: int = 0,
     ):
-
         self.rng = PRNGSequence(seed)
 
         init_rng = next(self.rng)
 
-        actor_input_dim = [((1, state_dim), jnp.float32)]
+        actor_input_dim = (1, state_dim)
 
-        actor = build_gaussian_policy_model(
+        global actor
+        actor, actor_params = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
-        self.actor_target = build_gaussian_policy_model(
+        _, self.actor_target = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
-        actor_optimizer = optim.Adam(learning_rate=lr).create(actor)
+        actor_optimizer = optim.Adam(learning_rate=lr).create(actor_params)
         self.actor_optimizer = jax.device_put(actor_optimizer)
 
         init_rng = next(self.rng)
 
-        critic_input_dim = [
-            ((1, state_dim), jnp.float32),
-            ((1, action_dim), jnp.float32),
-        ]
+        critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        critic = build_double_critic_model(critic_input_dim, init_rng)
-        self.critic_target = build_double_critic_model(critic_input_dim, init_rng)
-        critic_optimizer = optim.Adam(learning_rate=lr).create(critic)
+        global critic
+        critic, critic_params = build_double_critic_model(critic_input_dim, init_rng)
+        _, self.critic_target = build_double_critic_model(critic_input_dim, init_rng)
+        critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
-        temp = build_constant_model(1.0, next(self.rng))
-        temp_optimizer = optim.Adam(learning_rate=lr).create(temp)
+        global temp
+        temp, temp_params = build_constant_model(1.0, next(self.rng))
+        temp_optimizer = optim.Adam(learning_rate=lr).create(temp_params)
         self.temp_optimizer = jax.device_put(temp_optimizer)
 
-        mu_lagrange = build_constant_model(1.0, next(self.rng))
-        mu_lagrange_optimizer = optim.Adam(learning_rate=lr).create(mu_lagrange)
+        global mu_lagrange
+        mu_lagrange, mu_lagrange_params = build_constant_model(1.0, next(self.rng))
+        mu_lagrange_optimizer = optim.Adam(learning_rate=lr).create(mu_lagrange_params)
         self.mu_lagrange_optimizer = jax.device_put(mu_lagrange_optimizer)
-        sig_lagrange = build_constant_model(100.0, next(self.rng))
-        sig_lagrange_optimizer = optim.Adam(learning_rate=lr).create(sig_lagrange)
+
+        global sig_lagrange
+        sig_lagrange, sig_lagrange_params = build_constant_model(100.0, next(self.rng))
+        sig_lagrange_optimizer = optim.Adam(learning_rate=lr).create(sig_lagrange_params)
         self.sig_lagrange_optimizer = jax.device_put(sig_lagrange_optimizer)
 
         self.eps_q = eps_q
@@ -256,8 +259,8 @@ class MPO:
     @property
     def e_params(self):
         return (
-            self.actor_target,
-            self.critic_target,
+            self.actor_target_params,
+            self.critic_target_params,
             self.max_action,
             self.action_dim,
             self.temp_optimizer,
@@ -269,7 +272,7 @@ class MPO:
     def m_params(self):
         return (
             self.actor_optimizer,
-            self.actor_target,
+            self.actor_target_params,
             self.eps_mu,
             self.eps_sig,
             self.mu_lagrange_optimizer,
@@ -277,11 +280,11 @@ class MPO:
         )
 
     def select_action(self, state):
-        mu, _ = apply_model(self.actor_optimizer.target, state)
+        mu, _ = apply_model(actor, self.actor_optimizer.target, state.reshape(1, -1))
         return mu
 
     def sample_action(self, rng, state):
-        mu, log_sig = apply_model(self.actor_optimizer.target, state)
+        mu, log_sig = apply_model(actor, self.actor_optimizer.target, state.reshape(1, -1))
         sig = jnp.abs(log_sig)
         return mu + random.normal(rng, mu.shape) * sig
 
@@ -322,10 +325,10 @@ class MPO:
         ) = m_step(rngs, *self.m_params, state, weights, sampled_actions)
 
         if self.total_it % self.target_freq == 0:
-            self.actor_target = self.actor_target.replace(
+            self.actor_target_params = self.actor_target.replace(
                 params=self.actor_optimizer.target.params
             )
-            self.critic_target = self.critic_target.replace(
+            self.critic_target_params = self.critic_target.replace(
                 params=self.critic_optimizer.target.params
             )
 

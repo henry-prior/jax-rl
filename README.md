@@ -33,13 +33,13 @@ make test
 
 # Run
 
-To run each algorithm on cartpole swingup:
+To run each algorithm on cartpole swingup from the base directory:
 
 ```bash
-python main_dm_control.py --max_timestep 100000
+python jax_rl/main_dm_control.py --max_timestep 100000
 ```
 
 ```bash
-python main_dm_control.py --policy SAC --max_timesteps 100000
+python jax_rl/main_dm_control.py --policy SAC --max_timesteps 100000
 ```
 

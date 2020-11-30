@@ -42,12 +42,12 @@ class ReplayBuffer:
 
 
 @jax.jit
-def copy_params(model: nn.Module, model_target: nn.Module, tau: float) -> nn.Module:
+def copy_params(orig_params, target_params, tau: float) -> nn.Module:
     update_params = jax.tree_multimap(
-        lambda m1, mt: tau * m1 + (1 - tau) * mt, model.params, model_target.params
+        lambda m1, mt: tau * m1 + (1 - tau) * mt, orig_params, target_params,
     )
 
-    return model_target.replace(params=update_params)
+    return update_params
 
 
 @jax.vmap
@@ -60,7 +60,7 @@ def mse(pred: jnp.ndarray, true: jnp.ndarray) -> float:
     return jnp.square(true - pred).mean()
 
 
-#@functools.partial(jax.jit, static_argnums=0)
+# @functools.partial(jax.jit, static_argnums=0)
 # TODO: can we `jit` this still?
 def apply_model(model: nn.Module, params, *args, **kwargs) -> jnp.ndarray:
     return model.apply(dict(params=params), *args, **kwargs)
