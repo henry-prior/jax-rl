@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Tuple
 from functools import partial
 import jax
 from jax import random
@@ -120,7 +120,7 @@ def e_step(
     state: jnp.ndarray,
     batch_size: int,
     action_sample_size: int,
-) -> optim.Optimizer:
+) -> Tuple[optim.Optimizer, jnp.ndarray, jnp.ndarray]:
     mu, log_sig = apply_model(actor, actor_target_params, state, MPO=True)
     sig = jnp.exp(log_sig)
     sampled_actions = mu + random.normal(rng, (mu.shape[0], action_sample_size)) * sig
@@ -173,7 +173,7 @@ def m_step(
     state: jnp.ndarray,
     weights: jnp.ndarray,
     sampled_actions: jnp.ndarray,
-) -> optim.Optimizer:
+) -> Tuple[optim.Optimizer, optim.Optimizer, optim.Optimizer]:
     def loss_fn(mlo, slo, actor_params):
         mu, log_sig = apply_model(actor, actor_params, state, MPO=True)
         sig = jnp.exp(log_sig)
@@ -352,9 +352,6 @@ class MPO:
         return mu + random.normal(rng, mu.shape) * sig
 
     def train(self, replay_buffer, batch_size, action_sample_size):
-        print(apply_model(mu_lagrange, self.mu_lagrange_optimizer.target))
-        print(apply_model(sig_lagrange, self.sig_lagrange_optimizer.target))
-        print(apply_model(temp, self.temp_optimizer.target))
         self.total_it += 1
 
         buffer_out = replay_buffer.sample(next(self.rng), batch_size)
@@ -401,12 +398,8 @@ class MPO:
     def load(self, filename):
         self.critic_optimizer = load_model(filename + "_critic", self.critic_optimizer)
         self.critic_optimizer = jax.device_put(self.critic_optimizer)
-        self.critic_target = self.critic_target.replace(
-            params=self.critic_optimizer.target.params
-        )
+        self.critic_target_params = self.critic_optimizer.target.copy()
 
         self.actor_optimizer = load_model(filename + "_actor", self.actor_optimizer)
         self.actor_optimizer = jax.device_put(self.actor_optimizer)
-        self.actor_target = self.actor_target.replace(
-            params=self.actor_optimizer.target.params
-        )
+        self.actor_target_params = self.actor_optimizer.target.copy()

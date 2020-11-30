@@ -1,3 +1,4 @@
+from typing import Tuple
 from functools import partial
 import jax
 import jax.numpy as jnp
@@ -37,7 +38,7 @@ def get_td_target(
     actor_params: FrozenDict,
     critic_target_params: FrozenDict,
     log_alpha_params: FrozenDict,
-):
+) -> jnp.ndarray:
     next_action, next_log_p = apply_model(
         actor, actor_params, next_state, sample=True, key=rng
     )
@@ -60,7 +61,7 @@ def critic_step(
     state: jnp.ndarray,
     action: jnp.ndarray,
     target_Q: jnp.ndarray,
-):
+) -> optim.Optimizer:
     def loss_fn(critic_params):
         current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
@@ -77,7 +78,7 @@ def actor_step(
     critic_params: FrozenDict,
     state: jnp.ndarray,
     log_alpha_params: FrozenDict,
-):
+) -> Tuple[optim.Optimizer, jnp.ndarray]:
     def loss_fn(actor_params):
         actor_action, log_p = apply_model(
             actor, actor_params, state, sample=True, key=rng
@@ -98,7 +99,9 @@ def actor_step(
 
 
 @jax.jit
-def alpha_step(optimizer: optim.Optimizer, log_p: jnp.ndarray, target_entropy: float):
+def alpha_step(
+    optimizer: optim.Optimizer, log_p: jnp.ndarray, target_entropy: float
+) -> optim.Optimizer:
     log_p = jax.lax.stop_gradient(log_p)
 
     def loss_fn(log_alpha_params):
@@ -205,9 +208,9 @@ class SAC:
             self.actor_optimizer, log_p = actor_step(
                 next(self.rng),
                 self.actor_optimizer,
-                self.critic_optimizer,
+                self.critic_optimizer.target,
                 state,
-                self.log_alpha_optimizer,
+                self.log_alpha_optimizer.target,
             )
 
             if self.entropy_tune:
@@ -215,8 +218,8 @@ class SAC:
                     self.log_alpha_optimizer, log_p, self.target_entropy
                 )
 
-            self.critic_target = copy_params(
-                self.critic_optimizer.target, self.critic_target, self.tau
+            self.critic_target_params = copy_params(
+                self.critic_optimizer.target, self.critic_target_params, self.tau
             )
 
     def save(self, filename):
@@ -226,9 +229,7 @@ class SAC:
     def load(self, filename):
         self.critic_optimizer = load_model(filename + "_critic", self.critic_optimizer)
         self.critic_optimizer = jax.device_put(self.critic_optimizer)
-        self.critic_target = self.critic_target.replace(
-            params=self.critic_optimizer.target.params
-        )
+        self.critic_target_params = self.critic_optimizer.target.params.copy()
 
         self.actor_optimizer = load_model(filename + "_actor", self.actor_optimizer)
         self.actor_optimizer = jax.device_put(self.actor_optimizer)

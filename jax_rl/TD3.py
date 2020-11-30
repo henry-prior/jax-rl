@@ -64,7 +64,7 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-# @jax.jit
+@jax.jit
 def actor_step(
     optimizer: optim.Optimizer, critic_params: FrozenDict, state: jnp.ndarray,
 ) -> optim.Optimizer:
@@ -178,7 +178,7 @@ class TD3:
         if self.total_it % self.policy_freq == 0:
 
             self.actor_optimizer = actor_step(
-                self.actor_optimizer, self.critic_optimizer, state
+                self.actor_optimizer, self.critic_optimizer.target, state
             )
 
             self.critic_target_params = copy_params(
@@ -195,8 +195,8 @@ class TD3:
     def load(self, filename: str):
         self.critic_optimizer = load_model(filename + "_critic", self.critic_optimizer)
         self.critic_optimizer = jax.device_put(self.critic_optimizer)
-        self.critic_target_params = self.critic_optimizer.target
+        self.critic_target_params = self.critic_optimizer.target.copy()
 
         self.actor_optimizer = load_model(filename + "_actor", self.actor_optimizer)
         self.actor_optimizer = jax.device_put(self.actor_optimizer)
-        self.actor_target_params = self.actor_optimizer.target
+        self.actor_target_params = self.actor_optimizer.target.copy()
