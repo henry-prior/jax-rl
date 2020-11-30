@@ -11,10 +11,10 @@ Core Deep Reinforcement Learning algorithms using JAX for improved performance r
 
 # Migrating to Linen
 
-`flax` has a new interfact for models which requires a decent amount of changes. The folowing have been updated:
+`flax` has a new interface for models which requires a decent amount of changes. The folowing have been updated:
  - [x] TD3
  - [x] SAC
- - [ ] MPO
+ - [x] MPO
 
 
 ## Environment and Testing
