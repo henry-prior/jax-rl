@@ -104,16 +104,19 @@ class GaussianPolicy(nn.Module):
 
 class Constant(nn.Module):
     start_value: float
+    absolute: bool = False
 
     @nn.compact
     def __call__(self, dtype=jnp.float32):
         value = self.param("value", nn.initializers.ones, (1,))
+        if self.absolute:
+            value = jnp.maximum(0.0, value)
         return self.start_value * jnp.asarray(value, dtype)
 
 
-def build_constant_model(start_value, init_rng):
+def build_constant_model(start_value, init_rng, absolute=False):
     init_batch = jnp.ones((1,), jnp.float32)
-    constant = Constant(start_value=start_value)
+    constant = Constant(start_value=start_value, absolute=absolute)
     init_variables = constant.init(init_rng)
 
     return constant, init_variables["params"]
