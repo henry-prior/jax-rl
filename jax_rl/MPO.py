@@ -38,7 +38,9 @@ def get_td_target(
     next_action = mu + var * random.normal(rng, mu.shape)
     next_action = max_action * jnp.tanh(next_action)
 
-    target_Q1, target_Q2 = apply_model(critic, critic_target_params, next_state, next_action)
+    target_Q1, target_Q2 = apply_model(
+        critic, critic_target_params, next_state, next_action
+    )
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
 
@@ -50,7 +52,9 @@ def temp_step(
     optimizer: optim.Optimizer, Q: jnp.ndarray, eps_q: float, action_sample_size: int
 ) -> optim.Optimizer:
     def loss_fn(temp_params):
-        lse = logsumexp(Q / apply_model(temp, temp_params), axis=1) - jnp.log(action_sample_size)
+        lse = logsumexp(Q / apply_model(temp, temp_params), axis=1) - jnp.log(
+            action_sample_size
+        )
         temp_loss = apply_model(temp, temp_params) * (eps_q + lse.mean())
         return jnp.mean(temp_loss)
 
@@ -68,7 +72,15 @@ def lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
 
 
 @jax.jit
-def actor_step(optimizer: optim.Optimizer, weights: jnp.ndarray, log_p: jnp.ndarray, mu_lagrange_params: optim.Optimizer, reg_mu: float, sig_lagrange_params: FrozenDict, reg_sig: float) -> optim.Optimizer:
+def actor_step(
+    optimizer: optim.Optimizer,
+    weights: jnp.ndarray,
+    log_p: jnp.ndarray,
+    mu_lagrange_params: optim.Optimizer,
+    reg_mu: float,
+    sig_lagrange_params: FrozenDict,
+    reg_sig: float,
+) -> optim.Optimizer:
     def loss_fn(actor):
         actor_loss = -(jax.vmap(jnp.multiply)(weights, log_p)).sum(axis=1).mean()
         actor_loss -= apply_model(mu_lagrange, mu_lagrange_params) * reg_mu
@@ -117,8 +129,16 @@ def e_step(
             0.0, temp_optimizer.target.params["value"]
         )
 
-    Z = jnp.sum(jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target), axis=1)[:, None]
-    weights = jnp.exp((Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target)) / Z
+    Z = jnp.sum(
+        jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target),
+        axis=1,
+    )[:, None]
+    weights = (
+        jnp.exp(
+            (Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target)
+        )
+        / Z
+    )
     weights = jax.lax.stop_gradient(weights)
 
     return temp_optimizer, weights, sampled_actions
@@ -173,7 +193,12 @@ def m_step(
 
 
 @jax.jit
-def critic_step(optimizer: optim.Optimizer, state: jnp.ndarray, action: jnp.ndarray, target_Q: jnp.ndarray) -> optim.Optimizer:
+def critic_step(
+    optimizer: optim.Optimizer,
+    state: jnp.ndarray,
+    action: jnp.ndarray,
+    target_Q: jnp.ndarray,
+) -> optim.Optimizer:
     def loss_fn(critic_params):
         current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
@@ -236,7 +261,9 @@ class MPO:
 
         global sig_lagrange
         sig_lagrange, sig_lagrange_params = build_constant_model(100.0, next(self.rng))
-        sig_lagrange_optimizer = optim.Adam(learning_rate=lr).create(sig_lagrange_params)
+        sig_lagrange_optimizer = optim.Adam(learning_rate=lr).create(
+            sig_lagrange_params
+        )
         self.sig_lagrange_optimizer = jax.device_put(sig_lagrange_optimizer)
 
         self.eps_q = eps_q
@@ -284,7 +311,9 @@ class MPO:
         return mu
 
     def sample_action(self, rng, state):
-        mu, log_sig = apply_model(actor, self.actor_optimizer.target, state.reshape(1, -1))
+        mu, log_sig = apply_model(
+            actor, self.actor_optimizer.target, state.reshape(1, -1)
+        )
         sig = jnp.abs(log_sig)
         return mu + random.normal(rng, mu.shape) * sig
 

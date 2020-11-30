@@ -68,7 +68,6 @@ def critic_step(
 def actor_step(
     optimizer: optim.Optimizer, critic_params: FrozenDict, state: jnp.ndarray,
 ) -> optim.Optimizer:
-
     def loss_fn(actor_params):
         actor_loss = -apply_model(
             critic,
