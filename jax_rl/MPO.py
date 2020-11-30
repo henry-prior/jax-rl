@@ -173,13 +173,13 @@ def m_step(
         reg_sig = eps_sig - kl_mvg_diag(target_mu, target_sig, target_mu, sig).mean()
 
         mlo = lagrange_step(mlo, reg_mu)
-        mlo.target.params["value"] = jnp.maximum(0.0, mlo.target.params["value"])
+        mlo.target["value"] = jnp.maximum(0.0, mlo.target["value"])
         slo = lagrange_step(slo, reg_sig)
-        slo.target.params["value"] = jnp.maximum(0.0, slo.target.params["value"])
+        slo.target["value"] = jnp.maximum(0.0, slo.target["value"])
 
         actor_loss = -(actor_log_prob[:, None] * weights).sum(axis=1).mean()
-        actor_loss -= apply_model(mu_lagrange, mu_lagrange_optimizer.target) * reg_mu
-        actor_loss -= apply_model(sig_lagrange, sig_lagrange_optimizer.target) * reg_sig
+        actor_loss -= apply_model(mu_lagrange, mlo.target) * reg_mu
+        actor_loss -= apply_model(sig_lagrange, slo.target) * reg_sig
         return actor_loss.mean(), (mlo, slo)
 
     grad, optims = jax.grad(

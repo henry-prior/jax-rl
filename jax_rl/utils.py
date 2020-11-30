@@ -60,7 +60,7 @@ def mse(pred: jnp.ndarray, true: jnp.ndarray) -> float:
     return jnp.square(true - pred).mean()
 
 
-# @functools.partial(jax.jit, static_argnums=0)
+# @jax.partial(jax.jit, static_argnums=0)
 # TODO: can we `jit` this still?
 def apply_model(model: nn.Module, params, *args, **kwargs) -> jnp.ndarray:
     return model.apply(dict(params=params), *args, **kwargs)
