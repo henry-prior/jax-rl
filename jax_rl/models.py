@@ -1,5 +1,8 @@
+import jax
 import jax.numpy as jnp
 from flax import linen as nn
+from flax.core.frozen_dict import FrozenDict
+from haiku import PRNGSequence
 from jax import random
 
 from jax_rl.utils import gaussian_likelihood
@@ -112,19 +115,41 @@ class Constant(nn.Module):
         return self.start_value * jnp.asarray(value, dtype)
 
 
-def build_constant_model(start_value, init_rng, absolute=False):
+def build_constant_model(
+    start_value: float, init_rng: PRNGSequence, absolute: bool = False
+) -> FrozenDict:
     constant = Constant(start_value=start_value, absolute=absolute)
     init_variables = constant.init(init_rng)
 
-    return constant, init_variables["params"]
+    return init_variables["params"]
 
 
-def build_td3_actor_model(input_shapes, action_dim, max_action, init_rng):
+@jax.jit
+def apply_constant_model(
+    params: FrozenDict, start_value: float, absolute: bool, *args, **kwargs
+) -> jnp.ndarray:
+    return Constant(start_value=start_value, absolute=absolute).apply(
+        dict(params=params), *args, **kwargs
+    )
+
+
+def build_td3_actor_model(
+    input_shapes: float, action_dim: tuple, max_action: float, init_rng: PRNGSequence
+) -> FrozenDict:
     init_batch = jnp.ones(input_shapes, jnp.float32)
     actor = TD3Actor(action_dim=action_dim, max_action=max_action)
     init_variables = actor.init(init_rng, init_batch)
 
-    return actor, init_variables["params"]
+    return init_variables["params"]
+
+
+@jax.jit
+def apply_td3_actor_model(
+    params: FrozenDict, action_dim: tuple, max_action: float, *args, **kwargs
+) -> jnp.ndarray:
+    return TD3Actor(action_dim=action_dim, max_action=max_action).apply(
+        dict(params=params), *args, **kwargs
+    )
 
 
 def build_td3_critic_model(input_shapes, init_rng):
@@ -132,7 +157,12 @@ def build_td3_critic_model(input_shapes, init_rng):
     critic = TD3Critic()
     init_variables = critic.init(init_rng, *init_batch)
 
-    return critic, init_variables["params"]
+    return init_variables["params"]
+
+
+@jax.jit
+def apply_td3_critic_model(params: FrozenDict, *args, **kwargs) -> jnp.ndarray:
+    return TD3Critic().apply(dict(params=params), *args, **kwargs)
 
 
 def build_double_critic_model(input_shapes, init_rng):
@@ -140,7 +170,12 @@ def build_double_critic_model(input_shapes, init_rng):
     critic = DoubleCritic()
     init_variables = critic.init(init_rng, *init_batch)
 
-    return critic, init_variables["params"]
+    return init_variables["params"]
+
+
+@jax.jit
+def apply_double_critic_model(params: FrozenDict, *args, **kwargs) -> jnp.ndarray:
+    return DoubleCritic().apply(dict(params=params), *args, **kwargs)
 
 
 def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
@@ -148,4 +183,13 @@ def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
     policy = GaussianPolicy(action_dim=action_dim, max_action=max_action)
     init_variables = policy.init(init_rng, init_batch)
 
-    return policy, init_variables["params"]
+    return init_variables["params"]
+
+
+@jax.jit
+def apply_gaussian_policy_model(
+    params: FrozenDict, action_dim: tuple, max_action: float, *args, **kwargs
+) -> jnp.ndarray:
+    return GaussianPolicy(action_dim=action_dim, max_action=max_action).apply(
+        dict(params=params), *args, **kwargs
+    )

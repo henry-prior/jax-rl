@@ -4,6 +4,7 @@ from typing import Tuple
 
 import jax
 import jax.numpy as jnp
+import numpy as onp
 from flax import linen as nn
 from flax import optim
 from flax.core.frozen_dict import FrozenDict
@@ -11,13 +12,16 @@ from haiku import PRNGSequence
 from jax import random
 from jax.scipy.special import logsumexp
 
+from jax_rl.models import apply_constant_model
+from jax_rl.models import apply_double_critic_model
+from jax_rl.models import apply_gaussian_policy_model
 from jax_rl.models import build_constant_model
 from jax_rl.models import build_double_critic_model
 from jax_rl.models import build_gaussian_policy_model
 from jax_rl.saving import load_model
 from jax_rl.saving import save_model
-from jax_rl.utils import apply_model
 from jax_rl.utils import double_mse
+from jax_rl.utils import flat_obs
 from jax_rl.utils import gaussian_likelihood
 from jax_rl.utils import kl_mvg_diag
 
@@ -42,12 +46,15 @@ def get_td_target(
     critic_target_params: FrozenDict,
 ) -> jnp.ndarray:
 
-    mu, var = apply_model(actor, actor_target_params, next_state, MPO=True)
+    state_dim = state.shape[1:]
+    mu, var = apply_gaussian_policy_model(
+        actor_target_params, state_dim, max_action, next_state, MPO=True
+    )
     next_action = mu + var * random.normal(rng, mu.shape)
     next_action = max_action * jnp.tanh(next_action)
 
-    target_Q1, target_Q2 = apply_model(
-        critic, critic_target_params, next_state, next_action
+    target_Q1, target_Q2 = apply_double_critic_model(
+        critic_target_params, next_state, next_action
     )
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
@@ -60,10 +67,10 @@ def temp_step(
     optimizer: optim.Optimizer, Q: jnp.ndarray, eps_q: float, action_sample_size: int
 ) -> optim.Optimizer:
     def loss_fn(temp_params):
-        lse = logsumexp(Q / apply_model(temp, temp_params), axis=1) - jnp.log(
-            action_sample_size
-        )
-        temp_loss = apply_model(temp, temp_params) * (eps_q + lse.mean())
+        lse = logsumexp(
+            Q / apply_constant_model(temp_params, 1.0, True), axis=1
+        ) - jnp.log(action_sample_size)
+        temp_loss = apply_constant_model(temp_params, 1.0, True) * (eps_q + lse.mean())
         return jnp.mean(temp_loss)
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -73,7 +80,7 @@ def temp_step(
 @jax.jit
 def mu_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
     def loss_fn(mu_lagrange_params):
-        return jnp.mean(apply_model(mu_lagrange, mu_lagrange_params) * reg)
+        return jnp.mean(apply_constant_model(mu_lagrange_params, 1.0, True) * reg)
 
     grad = jax.grad(loss_fn)(optimizer.target)
     return optimizer.apply_gradient(grad)
@@ -82,7 +89,7 @@ def mu_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
 @jax.jit
 def sig_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
     def loss_fn(sig_lagrange_params):
-        return jnp.mean(apply_model(sig_lagrange, sig_lagrange_params) * reg)
+        return jnp.mean(apply_constant_model(sig_lagrange_params, 100.0, True) * reg)
 
     grad = jax.grad(loss_fn)(optimizer.target)
     return optimizer.apply_gradient(grad)
@@ -100,8 +107,8 @@ def actor_step(
 ) -> optim.Optimizer:
     def loss_fn(actor):
         actor_loss = -(jax.vmap(jnp.multiply)(weights, log_p)).sum(axis=1).mean()
-        actor_loss -= apply_model(mu_lagrange, mu_lagrange_params) * reg_mu
-        actor_loss -= apply_model(sig_lagrange, sig_lagrange_params) * reg_sig
+        actor_loss -= apply_constant_model(mu_lagrange_params, 1.0, True) * reg_mu
+        actor_loss -= apply_constant_model(sig_lagrange_params, 1.0, True) * reg_sig
         return actor_loss.mean()
 
     grad = jax.grad(loss_fn)(optimizer.target)
@@ -122,7 +129,10 @@ def e_step(
     batch_size: int,
     action_sample_size: int,
 ) -> Tuple[optim.Optimizer, jnp.ndarray, jnp.ndarray]:
-    mu, log_sig = apply_model(actor, actor_target_params, state, MPO=True)
+    state_dim = state.shape[1:]
+    mu, log_sig = apply_gaussian_policy_model(
+        actor_target_params, state_dim, max_action, state, MPO=True
+    )
     sig = jnp.exp(log_sig)
     sampled_actions = mu + random.normal(rng, (mu.shape[0], action_sample_size)) * sig
     sampled_actions = jnp.clip(sampled_actions, -max_action, max_action).transpose(
@@ -135,8 +145,8 @@ def e_step(
 
     states_repeated = jnp.tile(state, (action_sample_size, 1))
 
-    Q1 = apply_model(
-        critic, critic_target_params, states_repeated, sampled_actions, Q1=True
+    Q1 = apply_double_critic_model(
+        critic_target_params, states_repeated, sampled_actions, Q1=True
     )
     Q1 = Q1.reshape((batch_size, action_sample_size))
 
@@ -148,12 +158,14 @@ def e_step(
         # temp_optimizer.target["value"] = jnp.maximum(0.0, temp_optimizer.target["value"])
 
     Z = jnp.sum(
-        jnp.exp(Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target),
+        jnp.exp(Q1 - jnp.max(Q1, axis=1)[0])
+        / apply_constant_model(temp_optimizer.target, 1.0, True),
         axis=1,
     )[:, None]
     weights = (
         jnp.exp(
-            (Q1 - jnp.max(Q1, axis=1)[0]) / apply_model(temp, temp_optimizer.target)
+            (Q1 - jnp.max(Q1, axis=1)[0])
+            / apply_constant_model(temp_optimizer.target, 1.0, True)
         )
         / Z
     )
@@ -171,15 +183,20 @@ def m_step(
     eps_sig: float,
     mu_lagrange_optimizer: optim.Optimizer,
     sig_lagrange_optimizer: optim.Optimizer,
+    max_action: float,
     state: jnp.ndarray,
     weights: jnp.ndarray,
     sampled_actions: jnp.ndarray,
 ) -> Tuple[optim.Optimizer, optim.Optimizer, optim.Optimizer]:
+    state_dim = state.shape[1:]
+
     def loss_fn(mlo, slo, actor_params):
-        mu, log_sig = apply_model(actor, actor_params, state, MPO=True)
+        mu, log_sig = apply_gaussian_policy_model(
+            actor_params, state_dim, max_action, state, MPO=True
+        )
         sig = jnp.exp(log_sig)
-        target_mu, target_log_sig = apply_model(
-            actor, actor_target_params, state, MPO=True
+        target_mu, target_log_sig = apply_gaussian_policy_model(
+            actor_target_params, state_dim, max_action, state, MPO=True
         )
         target_sig = jnp.exp(target_log_sig)
 
@@ -200,8 +217,8 @@ def m_step(
         # slo.target["value"] = jnp.maximum(0.0, slo.target["value"])
 
         actor_loss = -(actor_log_prob[:, None] * weights).sum(axis=1).mean()
-        actor_loss -= apply_model(mu_lagrange, mlo.target) * reg_mu
-        actor_loss -= apply_model(sig_lagrange, slo.target) * reg_sig
+        actor_loss -= apply_constant_model(mlo.target, 1.0, True) * reg_mu
+        actor_loss -= apply_constant_model(slo.target, 1.0, True) * reg_sig
         return actor_loss.mean(), (mlo, slo)
 
     grad, optims = jax.grad(
@@ -222,7 +239,7 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
+        current_Q1, current_Q2 = apply_double_critic_model(critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -237,10 +254,10 @@ class MPO:
         action_dim: int,
         max_action: float,
         discount: float = 0.99,
-        lr: float = 3e-4,
+        lr: float = 5e-4,
         eps_q: float = 0.1,
-        eps_mu: float = 0.1,
-        eps_sig: float = 1e-4,
+        eps_mu: float = 5e-4,
+        eps_sig: float = 1e-5,
         temp_steps: int = 10,
         target_freq: int = 250,
         seed: int = 0,
@@ -251,11 +268,10 @@ class MPO:
 
         actor_input_dim = (1, state_dim)
 
-        global actor
-        actor, actor_params = build_gaussian_policy_model(
+        actor_params = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
-        _, self.actor_target_params = build_gaussian_policy_model(
+        self.actor_target_params = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, init_rng
         )
         actor_optimizer = optim.Adam(learning_rate=lr).create(actor_params)
@@ -265,30 +281,24 @@ class MPO:
 
         critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        global critic
-        critic, critic_params = build_double_critic_model(critic_input_dim, init_rng)
-        _, self.critic_target_params = build_double_critic_model(
+        critic_params = build_double_critic_model(critic_input_dim, init_rng)
+        self.critic_target_params = build_double_critic_model(
             critic_input_dim, init_rng
         )
         critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
         self.critic_optimizer = jax.device_put(critic_optimizer)
 
-        global temp
-        temp, temp_params = build_constant_model(
-            1.0, absolute=True, init_rng=next(self.rng)
-        )
+        temp_params = build_constant_model(1.0, absolute=True, init_rng=next(self.rng))
         temp_optimizer = optim.Adam(learning_rate=lr).create(temp_params)
         self.temp_optimizer = jax.device_put(temp_optimizer)
 
-        global mu_lagrange
-        mu_lagrange, mu_lagrange_params = build_constant_model(
+        mu_lagrange_params = build_constant_model(
             1.0, absolute=True, init_rng=next(self.rng)
         )
         mu_lagrange_optimizer = optim.Adam(learning_rate=lr).create(mu_lagrange_params)
         self.mu_lagrange_optimizer = jax.device_put(mu_lagrange_optimizer)
 
-        global sig_lagrange
-        sig_lagrange, sig_lagrange_params = build_constant_model(
+        sig_lagrange_params = build_constant_model(
             100.0, absolute=True, init_rng=next(self.rng)
         )
         sig_lagrange_optimizer = optim.Adam(learning_rate=lr).create(
@@ -305,6 +315,7 @@ class MPO:
         self.discount = discount
         self.target_freq = target_freq
 
+        self.state_dim = state_dim
         self.action_dim = action_dim
 
         self.total_it = 0
@@ -339,15 +350,63 @@ class MPO:
             self.eps_sig,
             self.mu_lagrange_optimizer,
             self.sig_lagrange_optimizer,
+            self.max_action,
         )
 
+    def _sample_trajectory(
+        self, replay_buffer, env, sample_episodes: int, episode_length: int
+    ):
+        mean_reward = 0.0
+
+        for e in range(sample_episodes):
+            timestep = env.reset()
+            done = 0.0
+
+            states = onp.zeros((episode_length, self.state_dim))
+            actions = onp.zeros((episode_length, self.action_dim))
+            rewards = onp.zeros((episode_length, 1))
+            next_states = onp.zeros((episode_length, self.state_dim))
+            dones = onp.zeros((episode_length, 1))
+
+            for step in range(episode_length):
+                state = flat_obs(timestep.observation)
+                action = self.select_action(state).clip(
+                    -self.max_action, self.max_action
+                )
+
+                states[step] = state
+                dones[step] = done
+                actions[step] = action
+
+                timestep = env.step(action)
+                reward = timestep.reward
+                done = float(timestep.last())
+                mean_reward += reward
+
+                rewards[step] = reward
+                next_states = flat_obs(timestep.observation)
+
+            if e + 1 % 100 == 0:
+                print(f"Sampled: {e+1}")
+
+            replay_buffer.add(states, actions, next_states, rewards, dones)
+        return replay_buffer, mean_reward / episode_length / sample_episodes
+
     def select_action(self, state):
-        mu, _ = apply_model(actor, self.actor_optimizer.target, state.reshape(1, -1))
+        mu, _ = apply_gaussian_policy_model(
+            self.actor_optimizer.target,
+            self.state_dim,
+            self.max_action,
+            state.reshape(1, -1),
+        )
         return mu
 
     def sample_action(self, rng, state):
-        mu, log_sig = apply_model(
-            actor, self.actor_optimizer.target, state.reshape(1, -1)
+        mu, log_sig = apply_gaussian_policy_model(
+            self.actor_optimizer.target,
+            self.state_dim,
+            self.max_action,
+            state.reshape(1, -1),
         )
         sig = jnp.abs(log_sig)
         return mu + random.normal(rng, mu.shape) * sig

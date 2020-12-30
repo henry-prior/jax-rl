@@ -7,12 +7,14 @@ from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 
+from jax_rl.models import apply_constant_model
+from jax_rl.models import apply_double_critic_model
+from jax_rl.models import apply_gaussian_policy_model
 from jax_rl.models import build_constant_model
 from jax_rl.models import build_double_critic_model
 from jax_rl.models import build_gaussian_policy_model
 from jax_rl.saving import load_model
 from jax_rl.saving import save_model
-from jax_rl.utils import apply_model
 from jax_rl.utils import copy_params
 from jax_rl.utils import double_mse
 
@@ -39,16 +41,17 @@ def get_td_target(
     critic_target_params: FrozenDict,
     log_alpha_params: FrozenDict,
 ) -> jnp.ndarray:
-    next_action, next_log_p = apply_model(
-        actor, actor_params, next_state, sample=True, key=rng
+    state_dim = state.shape[1:]
+    next_action, next_log_p = apply_gaussian_policy_model(
+        actor_params, state_dim, max_action, next_state, sample=True, key=rng
     )
 
-    target_Q1, target_Q2 = apply_model(
-        critic, critic_target_params, next_state, next_action
+    target_Q1, target_Q2 = apply_double_critic_model(
+        critic_target_params, next_state, next_action
     )
     target_Q = (
         jnp.minimum(target_Q1, target_Q2)
-        - jnp.exp(apply_model(log_alpha, log_alpha_params)) * next_log_p
+        - jnp.exp(apply_constant_model(log_alpha_params, -3.5, False)) * next_log_p
     )
     target_Q = reward + not_done * discount * target_Q
 
@@ -63,7 +66,7 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_model(critic, critic_params, state, action)
+        current_Q1, current_Q2 = apply_double_critic_model(critic_params, state, action)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -78,17 +81,22 @@ def actor_step(
     critic_params: FrozenDict,
     state: jnp.ndarray,
     log_alpha_params: FrozenDict,
+    max_action: float,
 ) -> Tuple[optim.Optimizer, jnp.ndarray]:
+    state_dim = state.shape[1:]
+
     def loss_fn(actor_params):
-        actor_action, log_p = apply_model(
-            actor, actor_params, state, sample=True, key=rng
+        actor_action, log_p = apply_gaussian_policy_model(
+            actor_params, state_dim, max_action, state, sample=True, key=rng
         )
-        q1, q2 = apply_model(critic, critic_params, state, actor_action)
+        q1, q2 = apply_double_critic_model(critic_params, state, actor_action)
         min_q = jnp.minimum(q1, q2)
         partial_loss_fn = jax.vmap(
             partial(
                 actor_loss_fn,
-                jax.lax.stop_gradient(apply_model(log_alpha, log_alpha_params)),
+                jax.lax.stop_gradient(
+                    apply_constant_model(log_alpha_params, -3.5, False)
+                ),
             ),
         )
         actor_loss = partial_loss_fn(log_p, min_q)
@@ -107,7 +115,9 @@ def alpha_step(
     def loss_fn(log_alpha_params):
         partial_loss_fn = jax.vmap(
             partial(
-                alpha_loss_fn, apply_model(log_alpha, log_alpha_params), target_entropy
+                alpha_loss_fn,
+                apply_constant_model(log_alpha_params, -3.5, False),
+                target_entropy,
             )
         )
         return jnp.mean(partial_loss_fn(log_p))
@@ -133,9 +143,7 @@ class SAC:
 
         actor_input_dim = (1, state_dim)
 
-        # TODO: has to be a cleaner way to do this
-        global actor
-        actor, actor_params = build_gaussian_policy_model(
+        actor_params = build_gaussian_policy_model(
             actor_input_dim, action_dim, max_action, next(self.rng)
         )
         actor_optimizer = optim.Adam(learning_rate=lr).create(actor_params)
@@ -145,10 +153,8 @@ class SAC:
 
         critic_input_dim = [(1, state_dim), (1, action_dim)]
 
-        # TODO: has to be a cleaner way to do this
-        global critic
-        critic, critic_params = build_double_critic_model(critic_input_dim, init_rng)
-        _, self.critic_target_params = build_double_critic_model(
+        critic_params = build_double_critic_model(critic_input_dim, init_rng)
+        self.critic_target_params = build_double_critic_model(
             critic_input_dim, init_rng
         )
         critic_optimizer = optim.Adam(learning_rate=lr).create(critic_params)
@@ -156,9 +162,7 @@ class SAC:
 
         self.entropy_tune = entropy_tune
 
-        # TODO: has to be a cleaner way to do this
-        global log_alpha
-        log_alpha, log_alpha_params = build_constant_model(-3.5, next(self.rng))
+        log_alpha_params = build_constant_model(-3.5, next(self.rng))
         log_alpha_optimizer = optim.Adam(learning_rate=lr).create(log_alpha_params)
         self.log_alpha_optimizer = jax.device_put(log_alpha_optimizer)
         self.target_entropy = -action_dim
@@ -167,6 +171,8 @@ class SAC:
         self.discount = discount
         self.tau = tau
         self.policy_freq = policy_freq
+
+        self.state_dim = state_dim
 
         self.total_it = 0
 
@@ -181,11 +187,15 @@ class SAC:
         )
 
     def select_action(self, state: jnp.ndarray) -> jnp.ndarray:
-        mu, _ = apply_model(actor, self.actor_optimizer.target, state)
+        mu, _ = apply_gaussian_policy_model(
+            self.actor_optimizer.target, self.state_dim, self.max_action, state
+        )
         return mu.flatten()
 
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
-        mu, log_sig = apply_model(actor, self.actor_optimizer.target, state)
+        mu, log_sig = apply_gaussian_policy_model(
+            self.actor_optimizer.target, self.state_dim, self.max_action, state
+        )
         return mu + jax.random.normal(rng, mu.shape) * jnp.exp(log_sig)
 
     def train(self, replay_buffer, batch_size=100):
@@ -211,6 +221,7 @@ class SAC:
                 self.critic_optimizer.target,
                 state,
                 self.log_alpha_optimizer.target,
+                self.max_action,
             )
 
             if self.entropy_tune:
@@ -219,7 +230,7 @@ class SAC:
                 )
 
             self.critic_target_params = copy_params(
-                self.critic_optimizer.target, self.critic_target_params, self.tau
+                self.critic_target_params, self.critic_optimizer.target, self.tau
             )
 
     def save(self, filename):

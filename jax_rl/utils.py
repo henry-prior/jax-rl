@@ -1,43 +1,33 @@
 import jax
 import jax.numpy as jnp
 import numpy as onp
+from dm_control import suite
 from flax import linen as nn
 from haiku import PRNGSequence
 from jax import random
 
 
-class ReplayBuffer:
-    def __init__(self, state_dim: int, action_dim: int, max_size: int = int(2e6)):
-        self.max_size = max_size
-        self.ptr = 0
-        self.size = 0
+def flat_obs(o):
+    return onp.concatenate([o[k].flatten() for k in o])
 
-        self.state = onp.zeros((max_size, state_dim))
-        self.action = onp.zeros((max_size, action_dim))
-        self.next_state = onp.zeros((max_size, state_dim))
-        self.reward = onp.zeros((max_size, 1))
-        self.not_done = onp.zeros((max_size, 1))
 
-    def add(self, state, action, next_state, reward, done):
-        self.state[self.ptr] = state
-        self.action[self.ptr] = action
-        self.next_state[self.ptr] = next_state
-        self.reward[self.ptr] = reward
-        self.not_done[self.ptr] = 1.0 - done
+def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
+    eval_env = suite.load(domain_name, task_name, {"random": seed + 100})
 
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
+    avg_reward = 0.0
+    for _ in range(eval_episodes):
+        timestep = eval_env.reset()
+        while not timestep.last():
+            action = policy.select_action(flat_obs(timestep.observation))
+            timestep = eval_env.step(action)
+            avg_reward += timestep.reward
 
-    def sample(self, rng: PRNGSequence, batch_size: int):
-        ind = random.randint(rng, (batch_size,), 0, self.size)
+    avg_reward /= eval_episodes
 
-        return (
-            jax.device_put(self.state[ind]),
-            jax.device_put(self.action[ind]),
-            jax.device_put(self.next_state[ind]),
-            jax.device_put(self.reward[ind]),
-            jax.device_put(self.not_done[ind]),
-        )
+    print("---------------------------------------")
+    print(f"Evaluation over {eval_episodes} episodes: {avg_reward:.3f}")
+    print("---------------------------------------")
+    return avg_reward
 
 
 @jax.jit
@@ -57,12 +47,6 @@ def double_mse(q1: jnp.ndarray, q2: jnp.ndarray, qt: jnp.ndarray) -> float:
 @jax.vmap
 def mse(pred: jnp.ndarray, true: jnp.ndarray) -> float:
     return jnp.square(true - pred).mean()
-
-
-# @jax.partial(jax.jit, static_argnums=0)
-# TODO: can we `jit` this still?
-def apply_model(model: nn.Module, params, *args, **kwargs) -> jnp.ndarray:
-    return model.apply(dict(params=params), *args, **kwargs)
 
 
 @jax.jit
