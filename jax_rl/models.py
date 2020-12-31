@@ -25,7 +25,7 @@ class TD3Actor(nn.Module):
 class TD3Critic(nn.Module):
     @nn.compact
     def __call__(self, state, action, Q1=False):
-        state_action = jnp.concatenate([state, action], axis=1)
+        state_action = jnp.concatenate([state, action], axis=-1)
 
         q1 = nn.Dense(features=256)(state_action)
         q1 = nn.relu(q1)
@@ -48,7 +48,7 @@ class TD3Critic(nn.Module):
 class DoubleCritic(nn.Module):
     @nn.compact
     def __call__(self, state, action, Q1=False):
-        state_action = jnp.concatenate([state, action], axis=1)
+        state_action = jnp.concatenate([state, action], axis=-1)
 
         q1 = nn.Dense(features=500)(state_action)
         q1 = nn.LayerNorm()(q1)
@@ -90,7 +90,7 @@ class GaussianPolicy(nn.Module):
         log_sig = jnp.clip(log_sig, self.log_sig_min, self.log_sig_max)
 
         if MPO:
-            return mu, log_sig
+            return self.max_action * nn.tanh(mu), log_sig
 
         if not sample:
             return self.max_action * nn.tanh(mu), log_sig
@@ -111,7 +111,7 @@ class Constant(nn.Module):
     def __call__(self, dtype=jnp.float32):
         value = self.param("value", nn.initializers.ones, (1,))
         if self.absolute:
-            value = jnp.maximum(0.0, value)
+            value = nn.softplus(value)
         return self.start_value * jnp.asarray(value, dtype)
 
 
@@ -124,17 +124,17 @@ def build_constant_model(
     return init_variables["params"]
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=2)
 def apply_constant_model(
-    params: FrozenDict, start_value: float, absolute: bool, *args, **kwargs
+    params: FrozenDict, start_value: float, absolute: bool,
 ) -> jnp.ndarray:
     return Constant(start_value=start_value, absolute=absolute).apply(
-        dict(params=params), *args, **kwargs
+        dict(params=params)
     )
 
 
 def build_td3_actor_model(
-    input_shapes: float, action_dim: tuple, max_action: float, init_rng: PRNGSequence
+    input_shapes: float, action_dim: int, max_action: float, init_rng: PRNGSequence
 ) -> FrozenDict:
     init_batch = jnp.ones(input_shapes, jnp.float32)
     actor = TD3Actor(action_dim=action_dim, max_action=max_action)
@@ -145,10 +145,10 @@ def build_td3_actor_model(
 
 @jax.jit
 def apply_td3_actor_model(
-    params: FrozenDict, action_dim: tuple, max_action: float, *args, **kwargs
+    params: FrozenDict, action_dim: int, max_action: float, state: jnp.ndarray,
 ) -> jnp.ndarray:
     return TD3Actor(action_dim=action_dim, max_action=max_action).apply(
-        dict(params=params), *args, **kwargs
+        dict(params=params), state
     )
 
 
@@ -160,9 +160,11 @@ def build_td3_critic_model(input_shapes, init_rng):
     return init_variables["params"]
 
 
-@jax.jit
-def apply_td3_critic_model(params: FrozenDict, *args, **kwargs) -> jnp.ndarray:
-    return TD3Critic().apply(dict(params=params), *args, **kwargs)
+@jax.partial(jax.jit, static_argnums=3)
+def apply_td3_critic_model(
+    params: FrozenDict, state: jnp.ndarray, action: jnp.ndarray, Q1: bool
+) -> jnp.ndarray:
+    return TD3Critic().apply(dict(params=params), state, action, Q1=Q1)
 
 
 def build_double_critic_model(input_shapes, init_rng):
@@ -173,9 +175,11 @@ def build_double_critic_model(input_shapes, init_rng):
     return init_variables["params"]
 
 
-@jax.jit
-def apply_double_critic_model(params: FrozenDict, *args, **kwargs) -> jnp.ndarray:
-    return DoubleCritic().apply(dict(params=params), *args, **kwargs)
+@jax.partial(jax.jit, static_argnums=3)
+def apply_double_critic_model(
+    params: FrozenDict, state: jnp.ndarray, action: jnp.ndarray, Q1: bool
+) -> jnp.ndarray:
+    return DoubleCritic().apply(dict(params=params), state, action, Q1=Q1)
 
 
 def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
@@ -186,10 +190,16 @@ def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
     return init_variables["params"]
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(5, 6))
 def apply_gaussian_policy_model(
-    params: FrozenDict, action_dim: tuple, max_action: float, *args, **kwargs
+    params: FrozenDict,
+    action_dim: int,
+    max_action: float,
+    state: jnp.ndarray,
+    key: PRNGSequence,
+    sample: bool,
+    MPO: bool,
 ) -> jnp.ndarray:
     return GaussianPolicy(action_dim=action_dim, max_action=max_action).apply(
-        dict(params=params), *args, **kwargs
+        dict(params=params), state, key=key, sample=sample, MPO=MPO
     )

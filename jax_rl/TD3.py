@@ -30,7 +30,7 @@ def get_td_target(
     actor_target_params: FrozenDict,
     critic_target_params: FrozenDict,
 ) -> jnp.ndarray:
-    state_dim = state.shape[1:]
+    state_dim = state.shape[-1]
     noise = jnp.clip(
         random.normal(rng, action.shape) * policy_noise, -noise_clip, noise_clip
     )
@@ -43,7 +43,7 @@ def get_td_target(
     )
 
     target_Q1, target_Q2 = apply_td3_critic_model(
-        critic_target_params, next_state, next_action
+        critic_target_params, next_state, next_action, False
     )
     target_Q = jnp.minimum(target_Q1, target_Q2)
     target_Q = reward + not_done * discount * target_Q
@@ -59,7 +59,7 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_td3_critic_model(critic_params, state, action)
+        current_Q1, current_Q2 = apply_td3_critic_model(critic_params, state, action, False)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -74,14 +74,14 @@ def actor_step(
     max_action: float,
     state: jnp.ndarray,
 ) -> optim.Optimizer:
-    state_dim = state.shape[1:]
+    state_dim = state.shape[-1]
 
     def loss_fn(actor_params):
         actor_loss = -apply_td3_critic_model(
             critic_params,
             state,
             apply_td3_actor_model(actor_params, state_dim, max_action, state),
-            Q1=True,
+            True,
         )
         return jnp.mean(actor_loss)
 

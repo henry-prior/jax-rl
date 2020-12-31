@@ -7,6 +7,7 @@ from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 
+from jax_rl.buffers import ReplayBuffer
 from jax_rl.models import apply_constant_model
 from jax_rl.models import apply_double_critic_model
 from jax_rl.models import apply_gaussian_policy_model
@@ -41,13 +42,13 @@ def get_td_target(
     critic_target_params: FrozenDict,
     log_alpha_params: FrozenDict,
 ) -> jnp.ndarray:
-    state_dim = state.shape[1:]
+    state_dim = state.shape[-1]
     next_action, next_log_p = apply_gaussian_policy_model(
-        actor_params, state_dim, max_action, next_state, sample=True, key=rng
+        actor_params, state_dim, max_action, next_state, rng, True, False
     )
 
     target_Q1, target_Q2 = apply_double_critic_model(
-        critic_target_params, next_state, next_action
+        critic_target_params, next_state, next_action, False
     )
     target_Q = (
         jnp.minimum(target_Q1, target_Q2)
@@ -66,7 +67,7 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_double_critic_model(critic_params, state, action)
+        current_Q1, current_Q2 = apply_double_critic_model(critic_params, state, action, False)
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -87,9 +88,9 @@ def actor_step(
 
     def loss_fn(actor_params):
         actor_action, log_p = apply_gaussian_policy_model(
-            actor_params, state_dim, max_action, state, sample=True, key=rng
+            actor_params, state_dim, max_action, state, rng, True, False
         )
-        q1, q2 = apply_double_critic_model(critic_params, state, actor_action)
+        q1, q2 = apply_double_critic_model(critic_params, state, actor_action, False)
         min_q = jnp.minimum(q1, q2)
         partial_loss_fn = jax.vmap(
             partial(
@@ -188,17 +189,29 @@ class SAC:
 
     def select_action(self, state: jnp.ndarray) -> jnp.ndarray:
         mu, _ = apply_gaussian_policy_model(
-            self.actor_optimizer.target, self.state_dim, self.max_action, state
+            self.actor_optimizer.target,
+            self.state_dim,
+            self.max_action,
+            state,
+            None,
+            False,
+            False,
         )
         return mu.flatten()
 
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_gaussian_policy_model(
-            self.actor_optimizer.target, self.state_dim, self.max_action, state
+            self.actor_optimizer.target,
+            self.state_dim,
+            self.max_action,
+            state,
+            None,
+            False,
+            False,
         )
         return mu + jax.random.normal(rng, mu.shape) * jnp.exp(log_sig)
 
-    def train(self, replay_buffer, batch_size=100):
+    def train(self, replay_buffer: ReplayBuffer, batch_size: int = 100):
         self.total_it += 1
 
         buffer_out = replay_buffer.sample(next(self.rng), batch_size)

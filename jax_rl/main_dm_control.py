@@ -9,15 +9,13 @@ from MPO import MPO
 from SAC import SAC
 from TD3 import TD3
 from train_loops import base_train_loop
-from train_loops import mpo_train_loop
 from utils import flat_obs
 
 
-TRAIN_LOOPS = dict(TD3=base_train_loop, SAC=base_train_loop, MPO=mpo_train_loop)
+TRAIN_LOOPS = dict(TD3=base_train_loop, SAC=base_train_loop, MPO=base_train_loop)
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default="TD3")  # Policy name (TD3, SAC, or MPO)
     parser.add_argument(
@@ -102,6 +100,8 @@ if __name__ == "__main__":
         "discount": args.discount,
     }
 
+    args.max_action = max_action
+
     # Initialize policy
     if args.policy == "TD3":
         # Target policy smoothing is scaled wrt the action scale
@@ -116,8 +116,6 @@ if __name__ == "__main__":
         kwargs["tau"] = args.tau
         policy = SAC(**kwargs)
     elif args.policy == "MPO":
-        args.episode_length = 1000
-        args.target_freq = 250
         policy = MPO(**kwargs)
     if args.load_model != "":
         policy_file = (
@@ -129,7 +127,7 @@ if __name__ == "__main__":
         state_dim,
         action_dim,
         max_size=int(args.buffer_size),
-        episode_length=int(args.episode_length),
+        episode_length=args.episode_length,
     )
 
     train_loop = TRAIN_LOOPS[args.policy]

@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import numpy as onp
 from dm_control import suite
 from flax import linen as nn
+from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
 
@@ -31,7 +32,9 @@ def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
 
 
 @jax.jit
-def copy_params(orig_params, target_params, tau: float) -> nn.Module:
+def copy_params(
+    orig_params: FrozenDict, target_params: FrozenDict, tau: float
+) -> nn.Module:
     update_params = jax.tree_multimap(
         lambda m1, mt: tau * m1 + (1 - tau) * mt, orig_params, target_params,
     )
@@ -57,7 +60,9 @@ def sample_from_multivariate_normal(
 
 
 @jax.jit
-def gaussian_likelihood(sample: jnp.ndarray, mu: float, log_sig: float):
+def gaussian_likelihood(
+    sample: jnp.ndarray, mu: jnp.ndarray, log_sig: jnp.ndarray
+) -> jnp.ndarray:
     pre_sum = -0.5 * (
         ((sample - mu) / (jnp.exp(log_sig) + 1e-6)) ** 2
         + 2 * log_sig
@@ -67,7 +72,9 @@ def gaussian_likelihood(sample: jnp.ndarray, mu: float, log_sig: float):
 
 
 @jax.vmap
-def kl_mvg_diag(pm, pv, qm, qv):
+def kl_mvg_diag(
+    pm: jnp.ndarray, pv: jnp.ndarray, qm: jnp.ndarray, qv: jnp.ndarray
+) -> jnp.ndarray:
     """
     Kullback-Leibler divergence from Gaussian pm,pv to Gaussian qm,qv.
     Also computes KL divergence from a single Gaussian pm,pv to a set
