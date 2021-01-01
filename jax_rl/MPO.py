@@ -4,7 +4,9 @@ from typing import Tuple
 
 import jax
 import jax.numpy as jnp
+from jax.experimental.optimizers import clip_grads
 from flax import optim
+import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
@@ -30,7 +32,7 @@ def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict
     return FrozenDict(**unfrozen_dict)
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(6, 7))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -59,7 +61,7 @@ def get_td_target(
     return target_Q
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(2, 3))
 def temp_step(
     optimizer: optim.Optimizer, Q: jnp.ndarray, eps_q: float, action_sample_size: int
 ) -> optim.Optimizer:
@@ -71,6 +73,7 @@ def temp_step(
         return jnp.mean(temp_loss)
 
     grad = jax.grad(loss_fn)(optimizer.target)
+    grad = clip_grads(grad, 5.0)
     return optimizer.apply_gradient(grad)
 
 
@@ -80,6 +83,7 @@ def mu_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer:
         return jnp.mean(apply_constant_model(mu_lagrange_params, 1.0, True) * reg)
 
     grad = jax.grad(loss_fn)(optimizer.target)
+    grad = clip_grads(grad, 5.0)
     return optimizer.apply_gradient(grad)
 
 
@@ -89,30 +93,11 @@ def sig_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer
         return jnp.mean(apply_constant_model(sig_lagrange_params, 100.0, True) * reg)
 
     grad = jax.grad(loss_fn)(optimizer.target)
+    grad = clip_grads(grad, 5.0)
     return optimizer.apply_gradient(grad)
 
 
-@jax.jit
-def actor_step(
-    optimizer: optim.Optimizer,
-    weights: jnp.ndarray,
-    log_p: jnp.ndarray,
-    mu_lagrange_params: optim.Optimizer,
-    reg_mu: float,
-    sig_lagrange_params: FrozenDict,
-    reg_sig: float,
-) -> optim.Optimizer:
-    def loss_fn(actor):
-        actor_loss = -(jax.vmap(jnp.multiply)(weights, log_p)).sum(axis=1).mean()
-        actor_loss -= apply_constant_model(mu_lagrange_params, 1.0, True) * reg_mu
-        actor_loss -= apply_constant_model(sig_lagrange_params, 1.0, True) * reg_sig
-        return actor_loss.mean()
-
-    grad = jax.grad(loss_fn)(optimizer.target)
-    return optimizer.apply_gradient(grad)
-
-
-@jax.partial(jax.jit, static_argnums=(4, 6, 7, 9, 10))
+@jax.partial(jax.jit, static_argnums=(3, 4, 6, 7, 9, 10))
 def e_step(
     rng: PRNGSequence,
     actor_target_params: FrozenDict,
@@ -126,6 +111,12 @@ def e_step(
     batch_size: int,
     action_sample_size: int,
 ) -> Tuple[optim.Optimizer, jnp.ndarray, jnp.ndarray]:
+    """
+    The 'E-step' from the MPO paper. We calculate our weights, which correspond
+    to the relative likelihood of obtaining the maximum reward for each of the
+    sampled actions. We also take steps on our temperature parameter, which
+    induces diversity in the weights.
+    """
     state_dim = state.shape[-1]
     mu, log_sig = apply_gaussian_policy_model(
         actor_target_params, state_dim, max_action, state, None, False, True
@@ -137,7 +128,9 @@ def e_step(
         (batch_size * action_sample_size, action_dim)
     )
 
-    states_repeated = jnp.tile(state, (action_sample_size, 1))
+    sampled_actions = jax.lax.stop_gradient(sampled_actions)
+
+    states_repeated = jnp.repeat(state, action_sample_size, axis=0)
 
     Q1 = apply_double_critic_model(
         critic_target_params, states_repeated, sampled_actions, True
@@ -149,24 +142,14 @@ def e_step(
     for _ in range(temp_steps):
         temp_optimizer = temp_step(temp_optimizer, Q1, eps_q, action_sample_size)
 
-    Z = jnp.sum(
-        jnp.exp(Q1 - jnp.max(Q1, axis=1)[0])
-        / apply_constant_model(temp_optimizer.target, 1.0, True),
-        axis=1,
-    )[:, None]
-    weights = (
-        jnp.exp(
-            (Q1 - jnp.max(Q1, axis=1)[0])
-            / apply_constant_model(temp_optimizer.target, 1.0, True)
-        )
-        / Z
-    )
+    weights = nn.softmax(Q1 / apply_constant_model(temp_optimizer.target, 1.0, True), axis=0)
     weights = jax.lax.stop_gradient(weights)
+    sampled_actions = jax.lax.stop_gradient(sampled_actions)
 
     return temp_optimizer, weights, sampled_actions
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(3, 4, 7))
 def m_step(
     rngs: PRNGSequence,
     actor_optimizer: optim.Optimizer,
@@ -180,38 +163,44 @@ def m_step(
     weights: jnp.ndarray,
     sampled_actions: jnp.ndarray,
 ) -> Tuple[optim.Optimizer, optim.Optimizer, optim.Optimizer]:
+    """
+    The 'M-step' from the MPO paper. We optimize our policy network to maximize
+    the lower bound on the probablility of obtaining the maximum reward given
+    that we act according to our policy (i.e. weighted according to our sampled actions).
+    """
     state_dim = state.shape[-1]
 
     def loss_fn(mlo, slo, actor_params):
         mu, log_sig = apply_gaussian_policy_model(
             actor_params, state_dim, max_action, state, None, False, True
         )
-        var = jnp.exp(log_sig) ** 2
+        sig = jnp.exp(log_sig)
         target_mu, target_log_sig = apply_gaussian_policy_model(
             actor_target_params, state_dim, max_action, state, None, False, True
         )
         target_mu = jax.lax.stop_gradient(target_mu)
         target_log_sig = jax.lax.stop_gradient(target_log_sig)
-        target_var = jnp.exp(target_log_sig) ** 2
+        target_sig = jnp.exp(target_log_sig)
 
         actor_log_prob = gaussian_likelihood(sampled_actions, target_mu, log_sig)
         actor_log_prob += gaussian_likelihood(sampled_actions, mu, target_log_sig)
         actor_log_prob = actor_log_prob.transpose((0, 1))
 
-        reg_mu = eps_mu - kl_mvg_diag(target_mu, target_var, mu, target_var).mean()
-        reg_sig = eps_sig - kl_mvg_diag(target_mu, target_var, target_mu, var).mean()
+        reg_mu = eps_mu - kl_mvg_diag(target_mu, target_sig, mu, target_sig).mean()
+        reg_sig = eps_sig - kl_mvg_diag(target_mu, target_sig, target_mu, sig).mean()
 
         mlo = mu_lagrange_step(mlo, reg_mu)
         slo = sig_lagrange_step(slo, reg_sig)
 
         actor_loss = -(actor_log_prob[:, None] * weights).sum(axis=1).mean()
         actor_loss -= apply_constant_model(mlo.target, 1.0, True) * reg_mu
-        actor_loss -= apply_constant_model(slo.target, 1.0, True) * reg_sig
+        actor_loss -= apply_constant_model(slo.target, 100.0, True) * reg_sig
         return actor_loss.mean(), (mlo, slo)
 
     grad, optims = jax.grad(
         partial(loss_fn, mu_lagrange_optimizer, sig_lagrange_optimizer), has_aux=True
     )(actor_optimizer.target)
+    grad = clip_grads(grad, 5.0)
     mu_lagrange_optimizer, sig_lagrange_optimizer = optims
 
     actor_optimizer = actor_optimizer.apply_gradient(grad)
@@ -234,6 +223,7 @@ def critic_step(
         return jnp.mean(critic_loss)
 
     grad = jax.grad(loss_fn)(optimizer.target)
+    grad = clip_grads(grad, 5.0)
     return optimizer.apply_gradient(grad)
 
 
@@ -248,7 +238,7 @@ class MPO:
         eps_q: float = 0.1,
         eps_mu: float = 5e-4,
         eps_sig: float = 1e-5,
-        temp_steps: int = 10,
+        temp_steps: int = 5,
         target_freq: int = 250,
         seed: int = 0,
     ):
@@ -389,9 +379,6 @@ class MPO:
             next(self.rng), *self.e_params, state, batch_size, action_sample_size
         )
 
-        weights, sampled_actions = list(
-            map(jax.lax.stop_gradient, [weights, sampled_actions])
-        )
         sampled_actions = sampled_actions.reshape(
             (batch_size, action_sample_size, self.action_dim)
         ).squeeze()

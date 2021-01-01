@@ -60,6 +60,7 @@ def sample_from_multivariate_normal(
 
 
 @jax.jit
+@jax.vmap
 def gaussian_likelihood(
     sample: jnp.ndarray, mu: jnp.ndarray, log_sig: jnp.ndarray
 ) -> jnp.ndarray:
@@ -68,7 +69,7 @@ def gaussian_likelihood(
         + 2 * log_sig
         + jnp.log(2 * onp.pi)
     )
-    return jnp.sum(pre_sum, axis=1)
+    return jnp.sum(pre_sum)
 
 
 @jax.vmap
@@ -80,6 +81,15 @@ def kl_mvg_diag(
     Also computes KL divergence from a single Gaussian pm,pv to a set
     of Gaussians qm,qv.
     Diagonal covariances are assumed.  Divergence is expressed in nats.
+
+    Args:
+        pm: mean of starting distribution
+        pv: standard deviation of starting distribution
+        qm: mean of target distribution
+        qv: standard deviation of target distribution
+
+    Returns:
+        KL divergence from p to q
     """
     if len(qm.shape) == 2:
         axis = 1

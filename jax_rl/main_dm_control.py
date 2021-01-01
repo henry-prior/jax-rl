@@ -64,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--load_model", default=""
     )  # Model load file name, "" doesn't load, "default" uses file_name
-    parser.add_argument("--num_action_samples", default=64, type=int)
+    parser.add_argument("--num_action_samples", default=20, type=int)
     parser.add_argument("--save_freq", default=5e3, type=int)
     parser.add_argument("--episode_length", default=None, type=int)
     args = parser.parse_args()
