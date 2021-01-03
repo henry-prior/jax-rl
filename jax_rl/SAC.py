@@ -28,7 +28,7 @@ def alpha_loss_fn(log_alpha: jnp.ndarray, target_entropy: float, log_p: jnp.ndar
     return (log_alpha * (-log_p - target_entropy)).mean()
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(6, 7))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -75,7 +75,7 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=5)
 def actor_step(
     rng: PRNGSequence,
     optimizer: optim.Optimizer,
@@ -107,7 +107,7 @@ def actor_step(
     return optimizer.apply_gradient(grad), log_p
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=2)
 def alpha_step(
     optimizer: optim.Optimizer, log_p: jnp.ndarray, target_entropy: float
 ) -> optim.Optimizer:
