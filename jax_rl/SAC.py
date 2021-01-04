@@ -67,7 +67,9 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_double_critic_model(critic_params, state, action, False)
+        current_Q1, current_Q2 = apply_double_critic_model(
+            critic_params, state, action, False
+        )
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 

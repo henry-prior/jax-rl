@@ -67,7 +67,7 @@ def base_train_loop(args: dict, policy, replay_buffer: ReplayBuffer, env):
             evaluations.append(
                 eval_policy(policy, args.domain_name, args.task_name, args.seed)
             )
-            np.save(f"./results/{args.file_name}", evaluations)
+            np.save(f"./results/{args.file_name}_{t+1}", evaluations)
         if (t + 1) % args.save_freq == 0:
             if args.save_model:
-                policy.save(f"./models/{args.file_name}_{str(t+1)}")
+                policy.save(f"./models/{args.file_name}_{t+1}")

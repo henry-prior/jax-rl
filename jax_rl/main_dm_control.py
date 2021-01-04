@@ -36,7 +36,7 @@ if __name__ == "__main__":
         "--eval_freq", default=5e3, type=int
     )  # How often (time steps) we evaluate
     parser.add_argument(
-        "--max_timesteps", default=1e6, type=int
+        "--max_timesteps", default=1e8, type=int
     )  # Max time steps to run environment
     parser.add_argument(
         "--expl_noise", default=0.1
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser.add_argument("--episode_length", default=None, type=int)
     args = parser.parse_args()
 
-    args.file_name = f"{args.policy}_{args.domain_name}_{args.seed}"
+    args.file_name = f"{args.policy}_{args.domain_name}_{args.batch_size}_{args.seed}"
     print("---------------------------------------")
     print(f"Policy: {args.policy}, Env: {args.domain_name}, Seed: {args.seed}")
     print("---------------------------------------")
@@ -123,12 +123,7 @@ if __name__ == "__main__":
         )
         policy.load(f"./models/{policy_file}")
 
-    replay_buffer = ReplayBuffer(
-        state_dim,
-        action_dim,
-        max_size=int(args.buffer_size),
-        episode_length=args.episode_length,
-    )
+    replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(args.buffer_size),)
 
     train_loop = TRAIN_LOOPS[args.policy]
 

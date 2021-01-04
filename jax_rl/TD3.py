@@ -15,14 +15,14 @@ from jax_rl.utils import copy_params
 from jax_rl.utils import double_mse
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(6, 7, 8, 9))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
     action: jnp.ndarray,
     next_state: jnp.ndarray,
-    reward: float,
-    not_done: bool,
+    reward: jnp.ndarray,
+    not_done: jnp.ndarray,
     discount: float,
     policy_noise: float,
     noise_clip: float,
@@ -59,7 +59,9 @@ def critic_step(
     target_Q: jnp.ndarray,
 ) -> optim.Optimizer:
     def loss_fn(critic_params):
-        current_Q1, current_Q2 = apply_td3_critic_model(critic_params, state, action, False)
+        current_Q1, current_Q2 = apply_td3_critic_model(
+            critic_params, state, action, False
+        )
         critic_loss = double_mse(current_Q1, current_Q2, target_Q)
         return jnp.mean(critic_loss)
 
@@ -67,7 +69,7 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=2)
 def actor_step(
     optimizer: optim.Optimizer,
     critic_params: FrozenDict,
