@@ -7,3 +7,4 @@ tests/__pycache__/
 notebooks/
 *.mp4
 *.sh
+*.lprof

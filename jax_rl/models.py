@@ -74,10 +74,10 @@ class GaussianPolicy(nn.Module):
     action_dim: int
     max_action: float
     log_sig_min: float = -20.0
-    log_sig_max: float = 2.0
+    log_sig_max: float = None
 
     @nn.compact
-    def __call__(self, x, key=None, MPO=False, sample=False):
+    def __call__(self, x, key=None, sample=False, MPO=False):
         x = nn.Dense(features=200)(x)
         x = nn.LayerNorm()(x)
         x = nn.tanh(x)
@@ -86,7 +86,6 @@ class GaussianPolicy(nn.Module):
         x = nn.Dense(features=2 * self.action_dim)(x)
 
         mu, log_sig = jnp.split(x, 2, axis=-1)
-        log_sig = nn.softplus(log_sig)
         log_sig = jnp.clip(log_sig, self.log_sig_min, self.log_sig_max)
 
         if MPO:
@@ -109,10 +108,12 @@ class Constant(nn.Module):
 
     @nn.compact
     def __call__(self, dtype=jnp.float32):
-        value = self.param("value", nn.initializers.ones, (1,))
+        value = self.param(
+            "value", lambda key, shape: jnp.full(shape, self.start_value, dtype), (1,)
+        )
         if self.absolute:
             value = nn.softplus(value)
-        return self.start_value * jnp.asarray(value, dtype)
+        return jnp.asarray(value, dtype)
 
 
 def build_constant_model(
@@ -124,7 +125,7 @@ def build_constant_model(
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=2)
+@jax.partial(jax.jit, static_argnums=(1, 2))
 def apply_constant_model(
     params: FrozenDict, start_value: float, absolute: bool,
 ) -> jnp.ndarray:
@@ -143,7 +144,7 @@ def build_td3_actor_model(
     return init_variables["params"]
 
 
-@jax.jit
+@jax.partial(jax.jit, static_argnums=(1, 2))
 def apply_td3_actor_model(
     params: FrozenDict, action_dim: int, max_action: float, state: jnp.ndarray,
 ) -> jnp.ndarray:
@@ -190,7 +191,7 @@ def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=(5, 6))
+@jax.partial(jax.jit, static_argnums=(1, 2, 5, 6))
 def apply_gaussian_policy_model(
     params: FrozenDict,
     action_dim: int,

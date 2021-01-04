@@ -64,12 +64,11 @@ def sample_from_multivariate_normal(
 def gaussian_likelihood(
     sample: jnp.ndarray, mu: jnp.ndarray, log_sig: jnp.ndarray
 ) -> jnp.ndarray:
-    pre_sum = -0.5 * (
+    return -0.5 * (
         ((sample - mu) / (jnp.exp(log_sig) + 1e-6)) ** 2
         + 2 * log_sig
         + jnp.log(2 * onp.pi)
     )
-    return jnp.sum(pre_sum)
 
 
 @jax.vmap
