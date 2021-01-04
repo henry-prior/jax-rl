@@ -6,3 +6,5 @@ tests/__pycache__/
 *.ipynb
 notebooks/
 *.mp4
+*.sh
+*.lprof
