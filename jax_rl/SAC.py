@@ -28,7 +28,7 @@ def alpha_loss_fn(log_alpha: jnp.ndarray, target_entropy: float, log_p: jnp.ndar
     return (log_alpha * (-log_p - target_entropy)).mean()
 
 
-@jax.partial(jax.jit, static_argnums=(6, 7))
+@jax.partial(jax.jit, static_argnums=(6, 7, 8))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -38,13 +38,13 @@ def get_td_target(
     not_done: jnp.ndarray,
     discount: float,
     max_action: float,
+    action_dim: int,
     actor_params: FrozenDict,
     critic_target_params: FrozenDict,
     log_alpha_params: FrozenDict,
 ) -> jnp.ndarray:
-    state_dim = state.shape[-1]
     next_action, next_log_p = apply_gaussian_policy_model(
-        actor_params, state_dim, max_action, next_state, rng, True, False
+        actor_params, action_dim, max_action, next_state, rng, True, False
     )
 
     target_Q1, target_Q2 = apply_double_critic_model(
@@ -77,7 +77,7 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.partial(jax.jit, static_argnums=5)
+@jax.partial(jax.jit, static_argnums=(5, 6))
 def actor_step(
     rng: PRNGSequence,
     optimizer: optim.Optimizer,
@@ -85,12 +85,11 @@ def actor_step(
     state: jnp.ndarray,
     log_alpha_params: FrozenDict,
     max_action: float,
+    action_dim: int,
 ) -> Tuple[optim.Optimizer, jnp.ndarray]:
-    state_dim = state.shape[1:]
-
     def loss_fn(actor_params):
         actor_action, log_p = apply_gaussian_policy_model(
-            actor_params, state_dim, max_action, state, rng, True, False
+            actor_params, action_dim, max_action, state, rng, True, False
         )
         q1, q2 = apply_double_critic_model(critic_params, state, actor_action, False)
         min_q = jnp.minimum(q1, q2)
@@ -175,7 +174,7 @@ class SAC:
         self.tau = tau
         self.policy_freq = policy_freq
 
-        self.state_dim = state_dim
+        self.action_dim = action_dim
 
         self.total_it = 0
 
@@ -184,6 +183,7 @@ class SAC:
         return (
             self.discount,
             self.max_action,
+            self.action_dim,
             self.actor_optimizer.target,
             self.critic_target_params,
             self.log_alpha_optimizer.target,
@@ -192,7 +192,7 @@ class SAC:
     def select_action(self, state: jnp.ndarray) -> jnp.ndarray:
         mu, _ = apply_gaussian_policy_model(
             self.actor_optimizer.target,
-            self.state_dim,
+            self.action_dim,
             self.max_action,
             state,
             None,
@@ -204,7 +204,7 @@ class SAC:
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_gaussian_policy_model(
             self.actor_optimizer.target,
-            self.state_dim,
+            self.action_dim,
             self.max_action,
             state,
             None,
@@ -237,6 +237,7 @@ class SAC:
                 state,
                 self.log_alpha_optimizer.target,
                 self.max_action,
+                self.action_dim,
             )
 
             if self.entropy_tune:
@@ -255,7 +256,7 @@ class SAC:
     def load(self, filename):
         self.critic_optimizer = load_model(filename + "_critic", self.critic_optimizer)
         self.critic_optimizer = jax.device_put(self.critic_optimizer)
-        self.critic_target_params = self.critic_optimizer.target.params.copy()
+        self.critic_target_params = self.critic_optimizer.target.copy()
 
         self.actor_optimizer = load_model(filename + "_actor", self.actor_optimizer)
         self.actor_optimizer = jax.device_put(self.actor_optimizer)

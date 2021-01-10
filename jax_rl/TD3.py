@@ -15,7 +15,7 @@ from jax_rl.utils import copy_params
 from jax_rl.utils import double_mse
 
 
-@jax.partial(jax.jit, static_argnums=(6, 7, 8, 9))
+@jax.partial(jax.jit, static_argnums=(6, 7, 8, 9, 10))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -27,16 +27,16 @@ def get_td_target(
     policy_noise: float,
     noise_clip: float,
     max_action: float,
+    action_dim: int,
     actor_target_params: FrozenDict,
     critic_target_params: FrozenDict,
 ) -> jnp.ndarray:
-    state_dim = state.shape[-1]
     noise = jnp.clip(
         random.normal(rng, action.shape) * policy_noise, -noise_clip, noise_clip
     )
 
     next_action = jnp.clip(
-        apply_td3_actor_model(actor_target_params, state_dim, max_action, next_state)
+        apply_td3_actor_model(actor_target_params, action_dim, max_action, next_state)
         + noise,
         -max_action,
         max_action,
@@ -69,20 +69,19 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.partial(jax.jit, static_argnums=2)
+@jax.partial(jax.jit, static_argnums=(2, 3))
 def actor_step(
     optimizer: optim.Optimizer,
     critic_params: FrozenDict,
     max_action: float,
+    action_dim: int,
     state: jnp.ndarray,
 ) -> optim.Optimizer:
-    state_dim = state.shape[-1]
-
     def loss_fn(actor_params):
         actor_loss = -apply_td3_critic_model(
             critic_params,
             state,
-            apply_td3_actor_model(actor_params, state_dim, max_action, state),
+            apply_td3_actor_model(actor_params, action_dim, max_action, state),
             True,
         )
         return jnp.mean(actor_loss)
@@ -138,7 +137,7 @@ class TD3:
         self.noise_clip = noise_clip
         self.policy_freq = policy_freq
 
-        self.state_dim = state_dim
+        self.action_dim = action_dim
 
         self.total_it = 0
 
@@ -149,6 +148,7 @@ class TD3:
             self.policy_noise,
             self.noise_clip,
             self.max_action,
+            self.action_dim,
             self.actor_target_params,
             self.critic_target_params,
         )
@@ -156,7 +156,7 @@ class TD3:
     def select_action(self, state: jnp.ndarray):
         return apply_td3_actor_model(
             self.actor_optimizer.target,
-            self.state_dim,
+            self.action_dim,
             self.max_action,
             state.reshape(1, -1),
         ).flatten()
@@ -189,6 +189,7 @@ class TD3:
                 self.actor_optimizer,
                 self.critic_optimizer.target,
                 self.max_action,
+                self.action_dim,
                 state,
             )
 
