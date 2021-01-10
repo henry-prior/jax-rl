@@ -61,6 +61,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model", action="store_true"
     )  # Save model and optimizer parameters
+    parser.add_argument("--load_step", default=0, type=int)
     parser.add_argument(
         "--load_model", default=""
     )  # Model load file name, "" doesn't load, "default" uses file_name
