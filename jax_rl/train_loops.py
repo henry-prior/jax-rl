@@ -11,9 +11,9 @@ def base_train_loop(args: dict, policy, replay_buffer: ReplayBuffer, env):
     timestep = env.reset()
     episode_reward = 0
     episode_timesteps = 0
-    episode_num = 0
+    episode_num = args.load_step // 1000
 
-    for t in range(int(args.max_timesteps)):
+    for t in range(args.load_step, int(args.max_timesteps)):
 
         episode_timesteps += 1
 

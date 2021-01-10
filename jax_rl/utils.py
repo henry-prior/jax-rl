@@ -35,6 +35,9 @@ def eval_policy(policy, domain_name, task_name, seed, eval_episodes=10):
 def copy_params(
     orig_params: FrozenDict, target_params: FrozenDict, tau: float
 ) -> nn.Module:
+    """
+    Applies polyak averaging between two sets of parameters.
+    """
     update_params = jax.tree_multimap(
         lambda m1, mt: tau * m1 + (1 - tau) * mt, orig_params, target_params,
     )
@@ -64,6 +67,18 @@ def sample_from_multivariate_normal(
 def gaussian_likelihood(
     sample: jnp.ndarray, mu: jnp.ndarray, log_sig: jnp.ndarray
 ) -> jnp.ndarray:
+    """
+    Calculates the log likelihood of a sample from a Gaussian distribution.
+    i.e. the log of the pdf evaluated at `sample`
+
+    Args:
+        sample (jnp.ndarray): an array of samples from the distribution
+        mu (jnp.ndarray): the mean of the distribution
+        log_sig (jnp.ndarray): the log of the standard deviation of the distribution
+
+    Returns:
+        the log likelihood of the sample
+    """
     return -0.5 * (
         ((sample - mu) / (jnp.exp(log_sig) + 1e-6)) ** 2
         + 2 * log_sig

@@ -46,10 +46,8 @@ As one would hope, the time per training step is significantly faster between JA
 
 ### Performance
 
-Better benchmarking to come on a wider range of environments and with more seeds. Below is the most simple example to demonstrate that the algorithms converge well on a simple task.
-
-![](docs/_static/reward_plots.png?raw=true)
-*Evaluation of deterministic policy (acting according to the mean for SAC and MPO) every 1000 training steps for each algorithm. Important parameters are constant for all, including batch size of 256 per training step, 10000 samples to the replay buffer with uniform random sampling before training, and 100000 total steps in the environment.*
+![](docs/_static/cartpole_graph.png?raw=true)
+Evaluation of deterministic policy (acting according to the mean of the policy distributions for SAC and MPO) every 5000 training steps for each algorithm. Important parameters are constant for all, including batch size of 256 per training step, 10000 samples to the replay buffer with uniform random sampling before training, and 250000 total steps in the environment.
 
 ## Notes on MPO Implementation
 
@@ -62,4 +60,3 @@ I've run a quick comparison of the two following the same procedure as the `Spee
 | Sequential Least Squares | Gradient Descent |
 |:------------------------:|:----------------:|
 |       39.19 ± 1.09       |   38.26 ± 2.74   |
-
