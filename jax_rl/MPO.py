@@ -33,7 +33,7 @@ def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict
     return FrozenDict(**unfrozen_dict)
 
 
-@jax.partial(jax.jit, static_argnums=(6, 7))
+@jax.partial(jax.jit, static_argnums=(6, 7, 8))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -43,12 +43,12 @@ def get_td_target(
     not_done: jnp.ndarray,
     discount: float,
     max_action: float,
+    action_dim: int,
     actor_target_params: FrozenDict,
     critic_target_params: FrozenDict,
 ) -> jnp.ndarray:
-    state_dim = state.shape[-1]
     mu, log_sig = apply_gaussian_policy_model(
-        actor_target_params, state_dim, max_action, next_state, None, False, True
+        actor_target_params, action_dim, max_action, next_state, None, False, True
     )
     next_action = mu + jnp.exp(log_sig) * random.normal(rng, mu.shape)
     next_action = max_action * nn.tanh(next_action)
@@ -107,15 +107,16 @@ def sample_actions_and_evaluate(
     To build our nonparametric policy, q(s, a), we sample `action_sample_size`
     actions from each policy in the batch and evaluate their Q-values.
     """
-    state_dim = state.shape[-1]
     # get the policy distribution for each state and sample `action_sample_size`
     # actions from each
     mu, log_sig = apply_gaussian_policy_model(
-        actor_target_params, state_dim, max_action, state, None, False, True
+        actor_target_params, action_dim, max_action, state, None, False, True
     )
-    sig = jnp.exp(log_sig)
-    sampled_actions = mu + random.normal(rng, (batch_size, action_sample_size)) * sig
-    sampled_actions = max_action * nn.tanh(sampled_actions)
+    mu = jnp.expand_dims(mu, axis=1)
+    sig = jnp.expand_dims(jnp.exp(log_sig), axis=1)
+    sampled_actions = (
+        mu + random.normal(rng, (batch_size, action_sample_size, action_dim)) * sig
+    )
     sampled_actions = sampled_actions.reshape(
         (batch_size * action_sample_size, action_dim)
     )
@@ -125,8 +126,13 @@ def sample_actions_and_evaluate(
     states_repeated = jnp.repeat(state, action_sample_size, axis=0)
 
     # evaluate each of the sampled actions at their corresponding state
+    # we keep the `sampled_actions` array unnquashed because we need to calcuate
+    # the log probabilities using it, but we pass the squashed actions to the critic
     Q1 = apply_double_critic_model(
-        critic_target_params, states_repeated, sampled_actions, True
+        critic_target_params,
+        states_repeated,
+        max_action * nn.tanh(sampled_actions),
+        True,
     )
     Q1 = Q1.reshape((batch_size, action_sample_size))
 
@@ -167,7 +173,7 @@ def e_step(
     jac = jax.grad(dual, argnums=2)
     jac = jax.partial(jac, Q1, eps_eta)
 
-    # use nonconvx optimizer to minimize the dual of the temperature parameter
+    # use nonconvex optimizer to minimize the dual of the temperature parameter
     # we have direct access to the jacobian function with jax so we can take
     # advantage of it here
     this_dual = jax.partial(dual, Q1, eps_eta)
@@ -180,11 +186,12 @@ def e_step(
     # maximum score when taken at the corresponding state.
     weights = jax.nn.softmax(Q1 / temp, axis=1)
     weights = jax.lax.stop_gradient(weights)
+    weights = jnp.expand_dims(weights, axis=-1)
 
     return temp, weights, sampled_actions
 
 
-@jax.partial(jax.jit, static_argnums=(3, 4, 7))
+@jax.partial(jax.jit, static_argnums=(3, 4, 7, 8))
 def m_step(
     rngs: PRNGSequence,
     actor_optimizer: optim.Optimizer,
@@ -194,6 +201,7 @@ def m_step(
     mu_lagrange_optimizer: optim.Optimizer,
     sig_lagrange_optimizer: optim.Optimizer,
     max_action: float,
+    action_dim: int,
     state: jnp.ndarray,
     weights: jnp.ndarray,
     sampled_actions: jnp.ndarray,
@@ -203,17 +211,16 @@ def m_step(
     the lower bound on the probablility of obtaining the maximum reward given
     that we act according to our policy (i.e. weighted according to our sampled actions).
     """
-    state_dim = state.shape[-1]
 
     def loss_fn(mlo, slo, actor_params):
         # get the distribution of the actor network (current policy)
         mu, log_sig = apply_gaussian_policy_model(
-            actor_params, state_dim, max_action, state, None, False, True
+            actor_params, action_dim, max_action, state, None, False, True
         )
         sig = jnp.exp(log_sig)
         # get the distribution of the target network (old policy)
         target_mu, target_log_sig = apply_gaussian_policy_model(
-            actor_target_params, state_dim, max_action, state, None, False, True
+            actor_target_params, action_dim, max_action, state, None, False, True
         )
         target_mu = jax.lax.stop_gradient(target_mu)
         target_log_sig = jax.lax.stop_gradient(target_log_sig)
@@ -251,7 +258,7 @@ def m_step(
     grad, (mu_lagrange_optimizer, sig_lagrange_optimizer) = jax.grad(
         partial(loss_fn, mu_lagrange_optimizer, sig_lagrange_optimizer), has_aux=True
     )(actor_optimizer.target)
-    grad = clip_grads(grad, 0.1)
+    grad = clip_grads(grad, 40.0)
 
     actor_optimizer = actor_optimizer.apply_gradient(grad)
 
@@ -278,7 +285,7 @@ def critic_step(
         return critic_loss.mean()
 
     grad = jax.grad(loss_fn)(optimizer.target)
-    grad = clip_grads(grad, 5.0)
+    grad = clip_grads(grad, 40.0)
     return optimizer.apply_gradient(grad)
 
 
@@ -293,7 +300,6 @@ class MPO:
         eps_eta: float = 0.1,
         eps_mu: float = 5e-4,
         eps_sig: float = 1e-5,
-        temp_steps: int = 5,
         target_freq: int = 250,
         seed: int = 0,
     ):
@@ -356,6 +362,7 @@ class MPO:
         return (
             self.discount,
             self.max_action,
+            self.action_dim,
             self.actor_target_params,
             self.critic_target_params,
         )
@@ -381,12 +388,13 @@ class MPO:
             self.mu_lagrange_optimizer,
             self.sig_lagrange_optimizer,
             self.max_action,
+            self.action_dim,
         )
 
     def select_action(self, state: jnp.ndarray) -> jnp.ndarray:
         mu, _ = apply_gaussian_policy_model(
             self.actor_optimizer.target,
-            self.state_dim,
+            self.action_dim,
             self.max_action,
             state.reshape(1, -1),
             None,
@@ -398,7 +406,7 @@ class MPO:
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_gaussian_policy_model(
             self.actor_optimizer.target,
-            self.state_dim,
+            self.action_dim,
             self.max_action,
             state.reshape(1, -1),
             None,
@@ -431,7 +439,7 @@ class MPO:
 
         sampled_actions = sampled_actions.reshape(
             (batch_size, action_sample_size, self.action_dim)
-        ).squeeze()
+        )
 
         rngs = [next(self.rng) for _ in range(3)]
 
