@@ -13,7 +13,7 @@ Core Deep Reinforcement Learning algorithms using JAX for improved performance r
 This repo makes use of the `poetry` package and dependency management tool. To build a local environment with all necessary packages run:
 
 ```bash
-make install
+make init
 ```
 
 To test local changes run:
