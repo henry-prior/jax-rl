@@ -1,10 +1,11 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
-
 from jax_rl.utils import gaussian_likelihood
 
 
@@ -127,7 +128,7 @@ def build_constant_model(
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=(1, 2))
+@partial(jax.jit, static_argnums=(1, 2))
 def apply_constant_model(
     params: FrozenDict, start_value: float, absolute: bool,
 ) -> jnp.ndarray:
@@ -146,7 +147,7 @@ def build_td3_actor_model(
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=(1, 2))
+@partial(jax.jit, static_argnums=(1, 2))
 def apply_td3_actor_model(
     params: FrozenDict, action_dim: int, max_action: float, state: jnp.ndarray,
 ) -> jnp.ndarray:
@@ -163,7 +164,7 @@ def build_td3_critic_model(input_shapes, init_rng):
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=3)
+@partial(jax.jit, static_argnums=3)
 def apply_td3_critic_model(
     params: FrozenDict, state: jnp.ndarray, action: jnp.ndarray, Q1: bool
 ) -> jnp.ndarray:
@@ -178,7 +179,7 @@ def build_double_critic_model(input_shapes, init_rng):
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=3)
+@partial(jax.jit, static_argnums=3)
 def apply_double_critic_model(
     params: FrozenDict, state: jnp.ndarray, action: jnp.ndarray, Q1: bool
 ) -> jnp.ndarray:
@@ -193,7 +194,7 @@ def build_gaussian_policy_model(input_shapes, action_dim, max_action, init_rng):
     return init_variables["params"]
 
 
-@jax.partial(jax.jit, static_argnums=(1, 2, 5, 6))
+@partial(jax.jit, static_argnums=(1, 2, 5, 6))
 def apply_gaussian_policy_model(
     params: FrozenDict,
     action_dim: int,

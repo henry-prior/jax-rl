@@ -11,8 +11,6 @@ from haiku import PRNGSequence
 from jax import random
 from jax.experimental.optimizers import clip_grads
 from jax.scipy.special import logsumexp
-from scipy.optimize import minimize
-
 from jax_rl.buffers import ReplayBuffer
 from jax_rl.models import apply_constant_model
 from jax_rl.models import apply_double_critic_model
@@ -25,6 +23,7 @@ from jax_rl.saving import save_model
 from jax_rl.utils import double_mse
 from jax_rl.utils import gaussian_likelihood
 from jax_rl.utils import kl_mvg_diag
+from scipy.optimize import minimize
 
 
 def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict:
@@ -33,7 +32,7 @@ def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict
     return FrozenDict(**unfrozen_dict)
 
 
-@jax.partial(jax.jit, static_argnums=(6, 7, 8))
+@partial(jax.jit, static_argnums=(6, 7, 8))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -80,7 +79,7 @@ def sig_lagrange_step(optimizer: optim.Optimizer, reg: float) -> optim.Optimizer
     return optimizer.apply_gradient(grad)
 
 
-@jax.partial(jax.jit, static_argnums=1)
+@partial(jax.jit, static_argnums=1)
 def dual(Q1: jnp.ndarray, eps_eta: float, temp: jnp.ndarray) -> float:
     """
     Dual function of the non-parametric variational distribution using samples.
@@ -92,7 +91,7 @@ def dual(Q1: jnp.ndarray, eps_eta: float, temp: jnp.ndarray) -> float:
     return out.sum()
 
 
-@jax.partial(jax.jit, static_argnums=(3, 4, 6, 7))
+@partial(jax.jit, static_argnums=(3, 4, 6, 7))
 def sample_actions_and_evaluate(
     rng: PRNGSequence,
     actor_target_params: FrozenDict,
@@ -171,12 +170,12 @@ def e_step(
     )
 
     jac = jax.grad(dual, argnums=2)
-    jac = jax.partial(jac, Q1, eps_eta)
+    jac = partial(jac, Q1, eps_eta)
 
     # use nonconvex optimizer to minimize the dual of the temperature parameter
     # we have direct access to the jacobian function with jax so we can take
     # advantage of it here
-    this_dual = jax.partial(dual, Q1, eps_eta)
+    this_dual = partial(dual, Q1, eps_eta)
     bounds = [(1e-6, None)]
     res = minimize(this_dual, temp, jac=jac, method="SLSQP", bounds=bounds)
     temp = jax.lax.stop_gradient(res.x)
@@ -191,7 +190,7 @@ def e_step(
     return temp, weights, sampled_actions
 
 
-@jax.partial(jax.jit, static_argnums=(3, 4, 7, 8))
+@partial(jax.jit, static_argnums=(3, 4, 7, 8))
 def m_step(
     rngs: PRNGSequence,
     actor_optimizer: optim.Optimizer,

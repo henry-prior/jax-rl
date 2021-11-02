@@ -5,15 +5,14 @@ description = "JAX implementations of core Deep RL algorithms"
 authors = ["Henry Prior <henry.prior@cims.nyu.edu>"]
 
 [tool.poetry.dependencies]
-python = "^3.7"
-dm-control = "0.0.300771433"
+python = ">=3.7,<3.10"
+dm-control = "0.0.403778684"
 dm-haiku = "git+https://github.com/deepmind/dm-haiku"
 flax = "^0.2.2"
-jax = "^0.2.6"
-jaxlib = "0.1.57"
-numpy = "1.18.4"
-tensorflow = "2.1.2"
-tensorflow_estimator = "==2.1.0"
+jax = "^0.2.21"
+jaxlib = "^0.1.57"
+tensorflow = "^2.6.0"
+tensorflow_estimator = "^2.6.0"
 line_profiler = "^3.1.0"
 
 [tool.poetry.dev-dependencies]
