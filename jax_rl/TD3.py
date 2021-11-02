@@ -1,10 +1,11 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
-
 from jax_rl.models import apply_td3_actor_model
 from jax_rl.models import apply_td3_critic_model
 from jax_rl.models import build_td3_actor_model
@@ -15,7 +16,7 @@ from jax_rl.utils import copy_params
 from jax_rl.utils import double_mse
 
 
-@jax.partial(jax.jit, static_argnums=(6, 7, 8, 9, 10))
+@partial(jax.jit, static_argnums=(6, 7, 8, 9, 10))
 def get_td_target(
     rng: PRNGSequence,
     state: jnp.ndarray,
@@ -69,7 +70,7 @@ def critic_step(
     return optimizer.apply_gradient(grad)
 
 
-@jax.partial(jax.jit, static_argnums=(2, 3))
+@partial(jax.jit, static_argnums=(2, 3))
 def actor_step(
     optimizer: optim.Optimizer,
     critic_params: FrozenDict,

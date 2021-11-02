@@ -1,6 +1,6 @@
 # jax-rl
 
-Core Deep Reinforcement Learning algorithms using JAX for improved performance relative to PyTorch and TensorFlow. Control tasks rely on the [DeepMind Control Suite](https://github.com/deepmind/dm_control); see repo for further setup if you don't have MuJoCo configured.
+Core Deep Reinforcement Learning algorithms using JAX for improved performance relative to PyTorch and TensorFlow. Control tasks rely on the [DeepMind Control Suite](https://github.com/deepmind/dm_control). DeepMind has recently open-sourced the MuJoCo physics engine, which is a dependency of this repo. If you haven't already set up MuJoCo, see the [download site](https://mujoco.org/download) and copy the unzipped folder to a `.mujoco` folder in your base directory.
 
 ## Current implementations
 
