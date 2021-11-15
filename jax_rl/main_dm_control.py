@@ -99,6 +99,7 @@ if __name__ == "__main__":
         "action_dim": action_dim,
         "max_action": max_action,
         "discount": args.discount,
+        "seed": args.seed,
     }
 
     args.max_action = max_action

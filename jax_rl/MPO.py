@@ -233,7 +233,6 @@ def m_step(
         # the on-policy distribution to calculate the likelihood.
         actor_log_prob = gaussian_likelihood(sampled_actions, target_mu, log_sig)
         actor_log_prob += gaussian_likelihood(sampled_actions, mu, target_log_sig)
-        actor_log_prob = actor_log_prob.transpose((0, 1))
 
         mu_kl = kl_mvg_diag(target_mu, target_sig, mu, target_sig).mean()
         sig_kl = kl_mvg_diag(target_mu, target_sig, target_mu, sig).mean()
