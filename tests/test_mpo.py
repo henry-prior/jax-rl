@@ -1,11 +1,11 @@
 import numpy as onp
 import pytest
 from dm_control import suite
-from jax_rl import MPO
-from jax_rl import utils
 
 from .utils import cartpole_environment
 from .utils import flat_obs
+from jax_rl import MPO
+from jax_rl import utils
 
 
 @pytest.fixture

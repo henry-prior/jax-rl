@@ -6,6 +6,7 @@ from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
+
 from jax_rl.models import apply_td3_actor_model
 from jax_rl.models import apply_td3_critic_model
 from jax_rl.models import build_td3_actor_model

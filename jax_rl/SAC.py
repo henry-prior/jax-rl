@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
+
 from jax_rl.buffers import ReplayBuffer
 from jax_rl.models import apply_constant_model
 from jax_rl.models import apply_double_critic_model

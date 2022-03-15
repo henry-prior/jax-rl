@@ -1,8 +1,8 @@
 import pytest
-from jax_rl import SAC
 
 from .utils import cartpole_environment
 from .utils import flat_obs
+from jax_rl import SAC
 
 
 @pytest.fixture
