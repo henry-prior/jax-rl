@@ -1,8 +1,8 @@
 import argparse
 import os
 
-import numpy as np
 import gym
+import numpy as np
 
 from buffers import ReplayBuffer
 from MPO import MPO

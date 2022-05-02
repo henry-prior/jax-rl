@@ -4,6 +4,7 @@ from buffers import ReplayBuffer
 from dm_control_utils import eval_policy as eval_policy_dm_control
 from dm_control_utils import flat_obs
 from gym_utils import eval_policy as eval_policy_gym
+from gym_utils import optional_squeeze
 
 
 def dm_control_train_loop(args: dict, policy, replay_buffer: ReplayBuffer, env):
@@ -93,9 +94,8 @@ def gym_train_loop(args: dict, policy, replay_buffer: ReplayBuffer, env):
         if t < args.start_timesteps:
             action = env.action_space.sample()
         else:
-            action = policy.select_action(np.array(state)).clip(
-                -args.max_action, args.max_action
-            )
+            action = policy.select_action(state).clip(-args.max_action, args.max_action)
+            action = optional_squeeze(action)
 
         # Perform action
         next_state, reward, done, _ = env.step(action)

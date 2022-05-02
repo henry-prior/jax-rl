@@ -1,16 +1,13 @@
-import numpy as onp
-import pytest
-from dm_control import suite
+import jax
+import numpy as np
 
-from .utils import cartpole_environment
-from .utils import flat_obs
+from .utils import *
 from jax_rl import TD3
-from jax_rl import utils
 
 
-@pytest.fixture
 def TD3_policy(
-    cartpole_environment,
+    env,
+    backend: Backend,
     discount: float = 0.99,
     policy_noise: float = 0.2,
     noise_clip: float = 0.5,
@@ -18,10 +15,7 @@ def TD3_policy(
     expl_noise: float = 0.1,
     tau: float = 0.005,
 ):
-    temp_timestep = cartpole_environment.reset()
-    state_dim = flat_obs(temp_timestep.observation).shape[0]
-    action_dim = cartpole_environment.action_spec().shape[0]
-    max_action = float(cartpole_environment.action_spec().maximum[0])
+    state_dim, action_dim, max_action = get_policy_args(env, backend)
 
     kwargs = {
         "state_dim": state_dim,
@@ -38,17 +32,34 @@ def TD3_policy(
     return TD3.TD3(**kwargs)
 
 
-def test_td3_runs(cartpole_environment, TD3_policy):
-    env = cartpole_environment
-    policy = TD3_policy
+def test_td3_runs_dmc(all_dmc_environments):
+    for env in all_dmc_environments:
+        policy = TD3_policy(env, backend=Backend.DMC)
 
-    timestep = env.reset()
+        timestep = env.reset()
 
-    state = flat_obs(timestep.observation)
+        state = flat_obs(timestep.observation)
 
-    action = (policy.select_action(state)).clip(-policy.max_action, policy.max_action)
+        action = (policy.select_action(state)).clip(
+            -policy.max_action, policy.max_action
+        )
 
-    timestep = env.step(action)
+        env.step(action)
+
+    # only testing that this runs without errors
+    assert True
+
+
+def test_td3_runs_gym(all_gym_environments):
+    for env in all_gym_environments:
+        policy = TD3_policy(env, backend=Backend.GYM)
+
+        state = env.reset()
+
+        action = policy.select_action(np.array(state))
+        env.step(action)
+        action = policy.sample_action(jax.random.PRNGKey(0), np.array(state))
+        env.step(action)
 
     # only testing that this runs without errors
     assert True

@@ -1,19 +1,12 @@
-import numpy as onp
-import pytest
-from dm_control import suite
+import jax
+import numpy as np
 
-from .utils import cartpole_environment
-from .utils import flat_obs
+from .utils import *
 from jax_rl import MPO
-from jax_rl import utils
 
 
-@pytest.fixture
-def MPO_policy(cartpole_environment, discount: float = 0.99):
-    temp_timestep = cartpole_environment.reset()
-    state_dim = flat_obs(temp_timestep.observation).shape[0]
-    action_dim = cartpole_environment.action_spec().shape[0]
-    max_action = float(cartpole_environment.action_spec().maximum[0])
+def MPO_policy(env, backend: Backend, discount: float = 0.99):
+    state_dim, action_dim, max_action = get_policy_args(env, backend)
 
     kwargs = {
         "state_dim": state_dim,
@@ -25,17 +18,34 @@ def MPO_policy(cartpole_environment, discount: float = 0.99):
     return MPO.MPO(**kwargs)
 
 
-def test_sac_runs(cartpole_environment, MPO_policy):
-    env = cartpole_environment
-    policy = MPO_policy
+def test_mpo_runs_dmc(all_dmc_environments):
+    for env in all_dmc_environments:
+        policy = MPO_policy(env, backend=Backend.DMC)
 
-    timestep = env.reset()
+        timestep = env.reset()
 
-    state = flat_obs(timestep.observation)
+        state = flat_obs(timestep.observation)
 
-    action = (policy.select_action(state)).clip(-policy.max_action, policy.max_action)
+        action = (policy.select_action(state)).clip(
+            -policy.max_action, policy.max_action
+        )
 
-    timestep = env.step(action)
+        env.step(action)
+
+    # only testing that this runs without errors
+    assert True
+
+
+def test_mpo_runs_gym(all_gym_environments):
+    for env in all_gym_environments:
+        policy = MPO_policy(env, backend=Backend.GYM)
+
+        state = env.reset()
+
+        action = policy.select_action(np.array(state))
+        env.step(action)
+        action = policy.sample_action(jax.random.PRNGKey(0), np.array(state))
+        env.step(action)
 
     # only testing that this runs without errors
     assert True

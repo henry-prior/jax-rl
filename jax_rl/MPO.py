@@ -400,7 +400,7 @@ class MPO:
             False,
             True,
         )
-        return mu
+        return mu.flatten()
 
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_gaussian_policy_model(
@@ -413,7 +413,7 @@ class MPO:
             True,
         )
         sig = jnp.exp(log_sig)
-        return mu + random.normal(rng, mu.shape) * sig
+        return (mu + random.normal(rng, mu.shape) * sig).flatten()
 
     def train(
         self, replay_buffer: ReplayBuffer, batch_size: int, action_sample_size: int
