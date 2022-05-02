@@ -1,6 +1,6 @@
 # jax-rl
 
-Core Deep Reinforcement Learning algorithms using JAX for improved performance relative to PyTorch and TensorFlow. Control tasks rely on the [DeepMind Control Suite](https://github.com/deepmind/dm_control). DeepMind has recently open-sourced the MuJoCo physics engine, which is a dependency of this repo. If you haven't already set up MuJoCo, see the [download site](https://mujoco.org/download) and copy the unzipped folder to a `.mujoco` folder in your base directory.
+Core Deep Reinforcement Learning algorithms using JAX for improved performance relative to PyTorch and TensorFlow. Control tasks rely on the [DeepMind Control Suite](https://github.com/deepmind/dm_control) or [OpenAI Gym](https://github.com/openai/gym). DeepMind has recently open-sourced the MuJoCo physics engine, which is a dependency of this repo. If you haven't already set up MuJoCo, see the [download site](https://mujoco.org/download) and copy the unzipped folder to a `.mujoco` folder in your base directory.
 
 ## Current implementations
 
@@ -24,13 +24,16 @@ make test
 
 ### Run
 
-To run each algorithm on cartpole swingup from the base directory:
+To run each algorithm with DeepMind Control Suite as the environment backend on cartpole swingup from the base directory:
 
 ```bash
 python jax_rl/main_dm_control.py --policy TD3 --max_timestep 100000
 python jax_rl/main_dm_control.py --policy SAC --max_timesteps 100000
 python jax_rl/main_dm_control.py --policy MPO --max_timesteps 100000
 ```
+
+To use the OpenAI Gym environment backend use the `jax_rl/main_gym.py` file instead.
+
 
 ## Results
 

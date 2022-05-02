@@ -6,6 +6,7 @@ from flax import optim
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
+
 from jax_rl.models import apply_td3_actor_model
 from jax_rl.models import apply_td3_critic_model
 from jax_rl.models import build_td3_actor_model
@@ -162,12 +163,11 @@ class TD3:
             state.reshape(1, -1),
         ).flatten()
 
-    def sample_action(self, state: jnp.ndarray):
-        return self.select_action(
-            state
-        ) + self.max_action * self.expl_noise * random.normal(
-            next(self.rng), self.action_dim
-        )
+    def sample_action(self, rng: PRNGSequence, state: jnp.ndarray):
+        mu = self.select_action(state)
+        return (
+            mu + self.max_action * self.expl_noise * random.normal(rng, mu.shape)
+        ).flatten()
 
     def train(self, replay_buffer, batch_size: int = 100):
         self.total_it += 1

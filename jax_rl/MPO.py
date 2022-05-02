@@ -11,6 +11,8 @@ from haiku import PRNGSequence
 from jax import random
 from jax.experimental.optimizers import clip_grads
 from jax.scipy.special import logsumexp
+from scipy.optimize import minimize
+
 from jax_rl.buffers import ReplayBuffer
 from jax_rl.models import apply_constant_model
 from jax_rl.models import apply_double_critic_model
@@ -23,7 +25,6 @@ from jax_rl.saving import save_model
 from jax_rl.utils import double_mse
 from jax_rl.utils import gaussian_likelihood
 from jax_rl.utils import kl_mvg_diag
-from scipy.optimize import minimize
 
 
 def set_frozen_dict(frozen_dict: FrozenDict, key: str, value: Any) -> FrozenDict:
@@ -399,7 +400,7 @@ class MPO:
             False,
             True,
         )
-        return mu
+        return mu.flatten()
 
     def sample_action(self, rng: PRNGSequence, state: jnp.ndarray) -> jnp.ndarray:
         mu, log_sig = apply_gaussian_policy_model(
@@ -412,7 +413,7 @@ class MPO:
             True,
         )
         sig = jnp.exp(log_sig)
-        return mu + random.normal(rng, mu.shape) * sig
+        return (mu + random.normal(rng, mu.shape) * sig).flatten()
 
     def train(
         self, replay_buffer: ReplayBuffer, batch_size: int, action_sample_size: int

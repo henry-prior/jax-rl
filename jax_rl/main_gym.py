@@ -1,33 +1,27 @@
 import argparse
 import os
 
+import gym
 import numpy as np
-from dm_control import suite
 
 from buffers import ReplayBuffer
-from dm_control_utils import flat_obs
 from MPO import MPO
 from SAC import SAC
 from TD3 import TD3
-from train_loops import dm_control_train_loop
+from train_loops import gym_train_loop
 
 
-TRAIN_LOOPS = dict(
-    TD3=dm_control_train_loop, SAC=dm_control_train_loop, MPO=dm_control_train_loop
-)
+TRAIN_LOOPS = dict(TD3=gym_train_loop, SAC=gym_train_loop, MPO=gym_train_loop)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default="TD3")  # Policy name (TD3, SAC, or MPO)
     parser.add_argument(
-        "--domain_name", default="cartpole"
-    )  # DeepMind control suite environment name
-    parser.add_argument(
-        "--task_name", default="swingup"
-    )  # Task name within environment
+        "--env", default="HalfCheetah-v3"
+    )  # OpenAI gym environment name
     parser.add_argument("--train_steps", default=1, type=int)
-    parser.add_argument("--seed", default=0, type=int)  # Sets DM control and JAX seeds
+    parser.add_argument("--seed", default=0, type=int)  # Sets gym and JAX seeds
     parser.add_argument(
         "--start_timesteps", default=1e4, type=int
     )  # Time steps initial random policy is used
@@ -72,9 +66,11 @@ if __name__ == "__main__":
     parser.add_argument("--episode_length", default=None, type=int)
     args = parser.parse_args()
 
-    args.file_name = f"{args.policy}_{args.domain_name}_{args.batch_size}_{args.seed}"
+    args.file_name = (
+        f"{args.policy}_gym_{args.env}_{args.batch_size}_{args.seed}"  # noqa: E501
+    )
     print("---------------------------------------")
-    print(f"Policy: {args.policy}, Env: {args.domain_name}, Seed: {args.seed}")
+    print(f"Policy: {args.policy}, Env: {args.env}, Seed: {args.seed}")
     print("---------------------------------------")
 
     if not os.path.exists("./results"):
@@ -86,15 +82,16 @@ if __name__ == "__main__":
     if not os.path.exists("./graphs"):
         os.makedirs("./graphs")
 
-    env = suite.load(args.domain_name, args.task_name, {"random": args.seed})
+    env = gym.make(args.env)
 
     # Set seeds
+    env.seed(args.seed)
     np.random.seed(args.seed)
 
     temp_timestep = env.reset()
-    state_dim = flat_obs(temp_timestep.observation).shape[0]
-    action_dim = env.action_spec().shape[0]
-    max_action = float(env.action_spec().maximum[0])
+    state_dim = env.observation_space.shape[0]
+    action_dim = env.action_space.shape[0]
+    max_action = float(env.action_space.high[0])
 
     kwargs = {
         "state_dim": state_dim,

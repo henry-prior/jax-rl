@@ -6,6 +6,7 @@ from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict
 from haiku import PRNGSequence
 from jax import random
+
 from jax_rl.utils import gaussian_likelihood
 
 
